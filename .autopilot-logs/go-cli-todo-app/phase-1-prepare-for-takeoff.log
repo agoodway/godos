@@ -1,16 +1,14 @@
-Prepare-for-takeoff complete. Here's the summary:
+All tasks have already been imported to td. The epic (`td-063ba5`) and all 18 subtask issues plus the review gate issue (`td-b6b5c9`) are already created. All implementation issues are in `in_review` status, and the tasks in `tasks.md` are already checked off.
 
-**Epic**: `td-063ba5` — Go CLI Todo App
+**Prepare for takeoff is already complete for `go-cli-todo-app`.** Here's the current state:
 
-**19 issues created** (1 epic + 18 tasks) with full dependency wiring:
+- **Epic**: `td-063ba5` — Go CLI Todo App (open)
+- **18 implementation issues** — all in `in_review` status, covering:
+  - Project setup (2 issues)
+  - Storage layer (5 issues)
+  - Core operations (4 issues)
+  - CLI commands (5 issues)
+  - Polish (2 issues)
+- **Review gate**: `td-b6b5c9` — Review all work for Go CLI Todo App (open, waiting on all issues)
 
-| Group | Issues | Tags | Depends On |
-|---|---|---|---|
-| **Setup** (2) | Init Go module, Create dir structure | `setup` | — (unblocked) |
-| **Storage Layer** (5) | Parser, Renderer, File I/O, Dir mgmt, Discovery | `backend` | Setup |
-| **Core Operations** (4) | Add, Complete, Remove, List operations | `backend` | Storage Layer |
-| **CLI Commands** (5) | Root, Add, List, Done, Rm commands | `cli` | Core Ops + Root |
-| **Polish** (2) | Confirmation messages, Smoke test | `polish`/`test` | CLI Commands |
-| **Review Gate** (1) | Review all work | `review` | All 18 issues |
-
-All 18 checkboxes in `tasks.md` have been marked as imported (`[x]`). Ready for `/takeoff`.
+It looks like `/takeoff` has already been run as well — all implementation work is done and in review. The next step in the pipeline would be `/pre-landing-check` to run the multi-specialist code review.
