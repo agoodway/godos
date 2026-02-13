@@ -1,0 +1,16 @@
+Prepare-for-takeoff complete. Here's the summary:
+
+**Epic**: `td-063ba5` — Go CLI Todo App
+
+**19 issues created** (1 epic + 18 tasks) with full dependency wiring:
+
+| Group | Issues | Tags | Depends On |
+|---|---|---|---|
+| **Setup** (2) | Init Go module, Create dir structure | `setup` | — (unblocked) |
+| **Storage Layer** (5) | Parser, Renderer, File I/O, Dir mgmt, Discovery | `backend` | Setup |
+| **Core Operations** (4) | Add, Complete, Remove, List operations | `backend` | Storage Layer |
+| **CLI Commands** (5) | Root, Add, List, Done, Rm commands | `cli` | Core Ops + Root |
+| **Polish** (2) | Confirmation messages, Smoke test | `polish`/`test` | CLI Commands |
+| **Review Gate** (1) | Review all work | `review` | All 18 issues |
+
+All 18 checkboxes in `tasks.md` have been marked as imported (`[x]`). Ready for `/takeoff`.
