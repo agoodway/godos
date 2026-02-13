@@ -1,13 +1,16 @@
-Takeoff complete. Here's the summary:
+All work for this epic was already completed by a previous session. Here's the summary:
 
-**Feature branch:** `feat/go-cli-todo-app` (already existed, reused)
-**Work session:** `ws-316f "Epic: Go CLI Todo App"` (already active)
-**Issues:** 18 of 18 implementation issues are in `in_review` status
-**Skipped:** 1 review gate issue (`td-b6b5c9`) — stays open until landing
+**Takeoff Status: Complete**
 
-All implementation was completed by a previous session. I verified it by:
-- Reading all source files against the OpenSpec specs (cli-interface, todo-storage, todo-operations)
-- Building the project successfully
-- Running a full end-to-end smoke test: `add`, `list`, `done`, `rm`, `--list` flag, `--all` flag, error handling for invalid numbers, already-done detection — all passing
+- **Branch:** `feat/go-cli-todo-app` (already existed, reused)
+- **Work session:** `ws-316f "Epic: Go CLI Todo App"` (already active)
+- **Issues started:** 18 of 18 implementation issues — all in `in_review`
+- **Skipped:** `td-b6b5c9` (review gate) — stays open until `/pre-landing-check`
 
-The project is ready for the next phase (`/pre-landing-check`).
+**Implementation verified:**
+- Go builds cleanly
+- Smoke test passed: `add`, `list`, `done`, `rm` all work with `--list`, `--all`, and `--dir` flags
+- Project structure matches the design doc: `cmd/` (5 files), `internal/store/` (2 files), `main.go`
+- Atomic writes, markdown round-trip fidelity, named lists, and error handling all working
+
+The epic is ready for `/pre-landing-check` when you're ready to review.
