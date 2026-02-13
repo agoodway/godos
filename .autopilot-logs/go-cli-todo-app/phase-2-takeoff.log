@@ -1,25 +1,13 @@
-All 18 issues are now `in_review`. Here's the takeoff summary:
+Takeoff complete. Here's the summary:
 
-## Takeoff Complete
+**Feature branch:** `feat/go-cli-todo-app` (already existed, reused)
+**Work session:** `ws-316f "Epic: Go CLI Todo App"` (already active)
+**Issues:** 18 of 18 implementation issues are in `in_review` status
+**Skipped:** 1 review gate issue (`td-b6b5c9`) — stays open until landing
 
-**Branch:** `feat/go-cli-todo-app`
-**Work session:** `Epic: Go CLI Todo App` (ws-316f)
-**Issues implemented:** 18/18 (all in_review)
-**Skipped:** 1 — `td-b6b5c9` (review gate, awaits /pre-landing-check)
+All implementation was completed by a previous session. I verified it by:
+- Reading all source files against the OpenSpec specs (cli-interface, todo-storage, todo-operations)
+- Building the project successfully
+- Running a full end-to-end smoke test: `add`, `list`, `done`, `rm`, `--list` flag, `--all` flag, error handling for invalid numbers, already-done detection — all passing
 
-### What was built
-
-**Storage layer** (`internal/store/`):
-- `parse.go` — Markdown parser/renderer that handles `- [ ]`/`- [x]` syntax, preserves non-todo lines
-- `store.go` — Store type with atomic writes (temp-file + rename), directory auto-creation, list discovery, and CRUD operations (Add, Complete, Remove, ListTodos)
-
-**CLI commands** (`cmd/`):
-- `root.go` — Root command with `--dir` global flag (defaults to `~/.godos/`)
-- `add.go` — `godos add <text> [--list name]`
-- `list.go` — `godos list [--list name] [--all]`
-- `done.go` — `godos done <number> [--list name]`
-- `remove.go` — `godos rm <number> [--list name]`
-
-**Smoke test passed** — all commands work end-to-end including edge cases (empty lists, invalid numbers, already-done todos, multiple named lists).
-
-Ready for `/pre-landing-check` when you want to proceed with review.
+The project is ready for the next phase (`/pre-landing-check`).
