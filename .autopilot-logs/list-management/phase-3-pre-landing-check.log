@@ -1,0 +1,3 @@
+The `/pre-landing-check` for the `list-management` change is complete. All 12 review-finding issues have been created under epic **td-1488ed** (List Management Commands).
+
+The next natural step in the pipeline would be `/prepare-for-landing` to work through these findings if you'd like to proceed.
