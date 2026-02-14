@@ -6,11 +6,17 @@ import (
 	"testing"
 )
 
-func executeCommand(args ...string) (string, error) {
+func executeCommand(t *testing.T, args ...string) (string, error) {
+	t.Helper()
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
 	rootCmd.SetErr(buf)
 	rootCmd.SetArgs(args)
+	defer func() {
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		rootCmd.SetArgs(nil)
+	}()
 	err := rootCmd.Execute()
 	return buf.String(), err
 }
@@ -18,7 +24,7 @@ func executeCommand(args ...string) (string, error) {
 func TestConfigureSet(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	out, err := executeCommand("configure", "set", "default_dir", "/tmp/godos")
+	out, err := executeCommand(t, "configure", "set", "default_dir", "/tmp/godos")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -31,11 +37,11 @@ func TestConfigureGet(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	// Set first
-	if _, err := executeCommand("configure", "set", "mykey", "myval"); err != nil {
+	if _, err := executeCommand(t, "configure", "set", "mykey", "myval"); err != nil {
 		t.Fatal(err)
 	}
 
-	out, err := executeCommand("configure", "get", "mykey")
+	out, err := executeCommand(t, "configure", "get", "mykey")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -48,11 +54,11 @@ func TestConfigureGet_MissingKey(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	// Set one key first so the file exists
-	if _, err := executeCommand("configure", "set", "exists", "yes"); err != nil {
+	if _, err := executeCommand(t, "configure", "set", "exists", "yes"); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := executeCommand("configure", "get", "nonexistent")
+	_, err := executeCommand(t, "configure", "get", "nonexistent")
 	if err == nil {
 		t.Error("expected error for missing key, got nil")
 	}
@@ -61,7 +67,7 @@ func TestConfigureGet_MissingKey(t *testing.T) {
 func TestConfigureGet_NoConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	_, err := executeCommand("configure", "get", "anything")
+	_, err := executeCommand(t, "configure", "get", "anything")
 	if err == nil {
 		t.Error("expected error when no config file, got nil")
 	}
@@ -70,14 +76,14 @@ func TestConfigureGet_NoConfig(t *testing.T) {
 func TestConfigureList(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	if _, err := executeCommand("configure", "set", "key1", "val1"); err != nil {
+	if _, err := executeCommand(t, "configure", "set", "key1", "val1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := executeCommand("configure", "set", "key2", "val2"); err != nil {
+	if _, err := executeCommand(t, "configure", "set", "key2", "val2"); err != nil {
 		t.Fatal(err)
 	}
 
-	out, err := executeCommand("configure", "list")
+	out, err := executeCommand(t, "configure", "list")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -92,7 +98,7 @@ func TestConfigureList(t *testing.T) {
 func TestConfigureList_NoConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	out, err := executeCommand("configure", "list")
+	out, err := executeCommand(t, "configure", "list")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,10 +107,22 @@ func TestConfigureList_NoConfig(t *testing.T) {
 	}
 }
 
+func TestConfigure_BareCommand(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	out, err := executeCommand(t, "configure")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "configure") || !strings.Contains(out, "Usage") {
+		t.Errorf("expected help/usage text, got %q", out)
+	}
+}
+
 func TestConfigureSet_MissingArgs(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	_, err := executeCommand("configure", "set", "onlykey")
+	_, err := executeCommand(t, "configure", "set", "onlykey")
 	if err == nil {
 		t.Error("expected error for missing args, got nil")
 	}

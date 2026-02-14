@@ -1,16 +1,16 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func setupTestConfig(t *testing.T) (cleanup func()) {
+func setupTestConfig(t *testing.T) {
 	t.Helper()
-	tmpDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
-	return func() {}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 }
 
 func TestFilePath_XDGSet(t *testing.T) {
@@ -38,8 +38,8 @@ func TestFilePath_XDGUnset(t *testing.T) {
 func TestLoad_NoFile(t *testing.T) {
 	setupTestConfig(t)
 	_, err := Load()
-	if err == nil {
-		t.Error("Load() expected error for missing file, got nil")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Load() expected ErrNotFound, got %v", err)
 	}
 }
 
@@ -138,5 +138,57 @@ func TestSet_OverwritePreservesOtherKeys(t *testing.T) {
 	}
 	if got2 != "val2" {
 		t.Errorf("Get(\"key2\") = %q, want %q", got2, "val2")
+	}
+}
+
+func TestLoad_InvalidYAML(t *testing.T) {
+	setupTestConfig(t)
+	p := FilePath()
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(":\n\t- ][invalid"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load()
+	if err == nil {
+		t.Error("Load() expected error for invalid YAML, got nil")
+	}
+	if errors.Is(err, ErrNotFound) {
+		t.Error("Load() should not return ErrNotFound for invalid YAML")
+	}
+	if !strings.Contains(err.Error(), "parsing config file") {
+		t.Errorf("Load() error should mention parsing, got: %v", err)
+	}
+}
+
+func TestSet_SpecialCharacters(t *testing.T) {
+	cases := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{"colon in value", "url", "http://example.com:8080"},
+		{"hash in value", "comment", "this # is a value"},
+		{"quotes in value", "greeting", `say "hello"`},
+		{"unicode value", "emoji", "cafe\u0301"},
+		{"dots in key", "app.setting.name", "enabled"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setupTestConfig(t)
+			if err := Set(tc.key, tc.value); err != nil {
+				t.Fatalf("Set(%q, %q) error: %v", tc.key, tc.value, err)
+			}
+			got, err := Get(tc.key)
+			if err != nil {
+				t.Fatalf("Get(%q) error: %v", tc.key, err)
+			}
+			if got != tc.value {
+				t.Errorf("Get(%q) = %q, want %q", tc.key, got, tc.value)
+			}
+		})
 	}
 }

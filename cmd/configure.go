@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 
@@ -12,8 +13,8 @@ var configureCmd = &cobra.Command{
 	Use:   "configure",
 	Short: "Manage godos configuration",
 	Long:  `Read and write persistent configuration values for godos.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
 	},
 }
 
@@ -51,9 +52,12 @@ var configureListCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		m, err := config.Load()
-		if err != nil {
+		if errors.Is(err, config.ErrNotFound) {
 			fmt.Fprintln(cmd.OutOrStdout(), "No configuration is set.")
 			return nil
+		}
+		if err != nil {
+			return err
 		}
 		if len(m) == 0 {
 			fmt.Fprintln(cmd.OutOrStdout(), "No configuration is set.")
