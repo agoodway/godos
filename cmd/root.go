@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	dirFlag string
-	Store   *store.Store
+	dirFlag    string
+	todoStore  *store.Store
 )
 
 func defaultDir() string {
@@ -23,11 +23,13 @@ func defaultDir() string {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "godos",
-	Short: "A simple CLI todo manager backed by markdown files",
-	Long:  `godos manages your todos as markdown checkbox lists. Each list is a .md file with - [ ] and - [x] entries.`,
+	Use:           "godos",
+	Short:         "A simple CLI todo manager backed by markdown files",
+	Long:          `godos manages your todos as markdown checkbox lists. Each list is a .md file with - [ ] and - [x] entries.`,
+	SilenceErrors: true,
+	SilenceUsage:  true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		Store = store.New(dirFlag)
+		todoStore = store.New(dirFlag)
 	},
 }
 

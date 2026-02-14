@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -15,24 +14,22 @@ var (
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List todos",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if listAllFlag {
-			listAll()
-			return
+			return listAll()
 		}
-		listOne(listListFlag)
+		return listOne(listListFlag)
 	},
 }
 
-func listOne(name string) {
-	todos, err := Store.ListTodos(name)
+func listOne(name string) error {
+	todos, err := todoStore.ListTodos(name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-		os.Exit(1)
+		return err
 	}
 	if len(todos) == 0 {
 		fmt.Printf("No todos in %s\n", name)
-		return
+		return nil
 	}
 	for i, t := range todos {
 		status := "[ ]"
@@ -41,25 +38,28 @@ func listOne(name string) {
 		}
 		fmt.Printf("%d. %s %s\n", i+1, status, t.Text)
 	}
+	return nil
 }
 
-func listAll() {
-	names, err := Store.Lists()
+func listAll() error {
+	names, err := todoStore.Lists()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-		os.Exit(1)
+		return err
 	}
 	if len(names) == 0 {
 		fmt.Println("No lists found")
-		return
+		return nil
 	}
 	for i, name := range names {
 		if i > 0 {
 			fmt.Println()
 		}
 		fmt.Printf("=== %s ===\n", name)
-		listOne(name)
+		if err := listOne(name); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func init() {

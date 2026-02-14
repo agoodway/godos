@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,13 +13,13 @@ var addCmd = &cobra.Command{
 	Use:   "add <text>",
 	Short: "Add a new todo",
 	Args:  cobra.MinimumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		text := strings.Join(args, " ")
-		if err := Store.Add(addListFlag, text); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-			os.Exit(1)
+		if err := todoStore.Add(addListFlag, text); err != nil {
+			return err
 		}
 		fmt.Printf("Added \"%s\" to %s\n", text, addListFlag)
+		return nil
 	},
 }
 

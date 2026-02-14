@@ -10,3 +10,5 @@ godos
 *.swp
 *.swo
 .todos/
+
+.autopilot-logs/

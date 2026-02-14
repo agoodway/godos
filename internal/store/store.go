@@ -19,17 +19,37 @@ func New(dir string) *Store {
 
 // ensureDir creates the storage directory if it does not exist.
 func (s *Store) ensureDir() error {
-	return os.MkdirAll(s.Dir, 0o755)
+	return os.MkdirAll(s.Dir, 0o700)
 }
 
 // listPath returns the file path for a named list.
-func (s *Store) listPath(name string) string {
-	return filepath.Join(s.Dir, name+".md")
+// It validates the name does not contain path traversal sequences.
+func (s *Store) listPath(name string) (string, error) {
+	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." || strings.Contains(name, "..") {
+		return "", fmt.Errorf("invalid list name %q: must not contain path separators or traversal sequences", name)
+	}
+	p := filepath.Join(s.Dir, name+".md")
+	absDir, err := filepath.Abs(s.Dir)
+	if err != nil {
+		return "", fmt.Errorf("resolving storage directory: %w", err)
+	}
+	absP, err := filepath.Abs(p)
+	if err != nil {
+		return "", fmt.Errorf("resolving list path: %w", err)
+	}
+	if !strings.HasPrefix(absP, absDir+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid list name %q: resolved path escapes storage directory", name)
+	}
+	return p, nil
 }
 
 // ReadList reads and parses a list file. Returns empty lines if the file doesn't exist.
 func (s *Store) ReadList(name string) ([]Line, error) {
-	data, err := os.ReadFile(s.listPath(name))
+	path, err := s.listPath(name)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -45,7 +65,10 @@ func (s *Store) WriteList(name string, lines []Line) error {
 		return fmt.Errorf("creating storage directory: %w", err)
 	}
 
-	target := s.listPath(name)
+	target, err := s.listPath(name)
+	if err != nil {
+		return err
+	}
 	content := RenderMarkdown(lines)
 
 	tmp, err := os.CreateTemp(s.Dir, ".godos-tmp-*")
@@ -58,6 +81,11 @@ func (s *Store) WriteList(name string, lines []Line) error {
 		tmp.Close()
 		os.Remove(tmpName)
 		return fmt.Errorf("writing temp file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("syncing temp file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)

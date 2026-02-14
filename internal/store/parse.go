@@ -35,8 +35,8 @@ func ParseMarkdown(content string) []Line {
 		if strings.HasPrefix(trimmed, "- [ ] ") {
 			text := strings.TrimPrefix(trimmed, "- [ ] ")
 			lines = append(lines, Line{Todo: &Todo{Text: text, Done: false}})
-		} else if strings.HasPrefix(trimmed, "- [x] ") {
-			text := strings.TrimPrefix(trimmed, "- [x] ")
+		} else if strings.HasPrefix(trimmed, "- [x] ") || strings.HasPrefix(trimmed, "- [X] ") {
+			text := trimmed[6:] // skip "- [x] " or "- [X] "
 			lines = append(lines, Line{Todo: &Todo{Text: text, Done: true}})
 		} else {
 			lines = append(lines, Line{Raw: raw})
