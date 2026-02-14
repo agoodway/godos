@@ -1,18 +1,16 @@
-All tasks have already been imported into td. The epic (`td-063ba5`), all 18 implementation issues, and the review gate issue (`td-b6b5c9`) already exist — all with the correct structure. The tasks in `tasks.md` are already checked off too.
+Prepare-for-takeoff is complete for **go-cli-todo-app**. Here's what was created:
 
-This change has already been through `/prepare-for-takeoff`. Here's the current state:
+**Epic:** `td-c213d6` — Go CLI Todo App
 
-**Epic:** `td-063ba5` — Go CLI Todo App (open)
+**17 issues** created across 5 groups with dependency chains:
 
-**18 implementation issues** — all in `in_review` status:
-| Group | Issues |
-|-------|--------|
-| **Project Setup** | Initialize Go module, Create directory structure |
-| **Storage Layer** | Markdown parser, Markdown renderer, File I/O, Directory management, List discovery |
-| **Core Operations** | Add, Complete, Remove, List operations |
-| **CLI Commands** | Root command, Add command, List command, Done command, Rm command |
-| **Polish** | Confirmation messages, End-to-end smoke test |
+| Group | Issues | Tags | Depends On |
+|-------|--------|------|------------|
+| 1. Project Setup | `td-8e7b31`, `td-c7b2e2` | `setup` | — (unblocked) |
+| 2. Storage Layer | `td-8d18e2`, `td-1c55b9`, `td-c728d6`, `td-3fb99d`, `td-ec80ad` | `backend` | Setup |
+| 3. Core Operations | `td-127d4b`, `td-8a6a55`, `td-0e1881`, `td-c78aa5` | `backend` | Storage Layer |
+| 4. CLI Commands | `td-359b7d`, `td-cafc6b`, `td-3b8665`, `td-fc40cf`, `td-2f08fc` | `frontend` | Core Operations |
+| 5. Polish | `td-8f7d8e`, `td-23ca1f` | `frontend`/`test` | CLI Commands |
+| Review Gate | `td-5b50a5` | `review` | All 16 issues |
 
-**Review Gate:** `td-b6b5c9` — Review all work for Go CLI Todo App (open, blocked)
-
-All tasks in `tasks.md` are already checked off. No action needed — the import was completed in a previous session.
+Note: There appear to be pre-existing issues from a prior import (the `in_review` set). You may want to close those duplicates if they're stale.
