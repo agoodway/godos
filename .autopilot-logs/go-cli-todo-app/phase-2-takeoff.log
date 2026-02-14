@@ -1,16 +1,16 @@
-All work for this epic was already completed by a previous session. Here's the summary:
+Takeoff complete. Here's the summary:
 
-**Takeoff Status: Complete**
+**Branch:** `feat/go-cli-todo-app` (reused existing)
+**Work session:** `ws-6866` — "Epic: Go CLI Todo App"
+**Epic:** `td-c213d6`
 
-- **Branch:** `feat/go-cli-todo-app` (already existed, reused)
-- **Work session:** `ws-316f "Epic: Go CLI Todo App"` (already active)
-- **Issues started:** 18 of 18 implementation issues — all in `in_review`
-- **Skipped:** `td-b6b5c9` (review gate) — stays open until `/pre-landing-check`
+**All 18 issues verified and submitted for review:**
+- **Project setup (2):** Go module with cobra v1.10.2, directory structure (`cmd/`, `internal/store/`)
+- **Storage layer (5):** Markdown parser/renderer, atomic file I/O, directory management, list discovery
+- **Core operations (4):** Add, complete, remove, list — all with proper error handling
+- **CLI commands (5):** Root with `--dir`, add with `--list`, list with `--list`/`--all`, done with `--list`, rm with `--list`
+- **Polish (2):** User-friendly messages, end-to-end smoke test passed
 
-**Implementation verified:**
-- Go builds cleanly
-- Smoke test passed: `add`, `list`, `done`, `rm` all work with `--list`, `--all`, and `--dir` flags
-- Project structure matches the design doc: `cmd/` (5 files), `internal/store/` (2 files), `main.go`
-- Atomic writes, markdown round-trip fidelity, named lists, and error handling all working
+**Skipped:** `td-5b50a5` (review gate — stays pending until all work is reviewed)
 
-The epic is ready for `/pre-landing-check` when you're ready to review.
+The implementation was already complete from a previous run. I verified the build (`go build`, `go vet` clean), ran a full smoke test covering add/list/done/rm with default and named lists, `--all` flag, error handling for invalid numbers, already-done detection, and empty list behavior — all passing.
