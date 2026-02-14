@@ -11,6 +11,22 @@ func newTestStore(t *testing.T) *Store {
 	return New(filepath.Join(t.TempDir(), "todos"))
 }
 
+func TestValidateName(t *testing.T) {
+	valid := []string{"todo", "work", "my-list", "my_list", "list123", "A", "a1-b2_c3"}
+	for _, name := range valid {
+		if err := ValidateName(name); err != nil {
+			t.Errorf("ValidateName(%q) = %v, want nil", name, err)
+		}
+	}
+
+	invalid := []string{"", "my list", "list!", "list.txt", "-start", "_start", "a/b", "a b"}
+	for _, name := range invalid {
+		if err := ValidateName(name); err == nil {
+			t.Errorf("ValidateName(%q) = nil, want error", name)
+		}
+	}
+}
+
 func TestAdd(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.Add("todo", "buy milk"); err != nil {
@@ -64,7 +80,6 @@ func TestComplete(t *testing.T) {
 		t.Error("expected alreadyDone=false")
 	}
 
-	// Verify it's actually marked done
 	todos, err := s.ListTodos("todo")
 	if err != nil {
 		t.Fatal(err)
@@ -241,7 +256,6 @@ func TestAtomicWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify the file exists and has correct content
 	data, err := os.ReadFile(filepath.Join(s.Dir, "todo.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +265,6 @@ func TestAtomicWrite(t *testing.T) {
 		t.Errorf("file content:\ngot:  %q\nwant: %q", string(data), expected)
 	}
 
-	// Verify no temp files were left behind (lock files are expected)
 	entries, err := os.ReadDir(s.Dir)
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +287,6 @@ func TestWriteListInvalidName(t *testing.T) {
 func TestWriteListReadOnlyDir(t *testing.T) {
 	dir := t.TempDir()
 	s := New(filepath.Join(dir, "readonly"))
-	// Create the directory then make it read-only
 	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -294,13 +306,11 @@ func TestReadListFileSizeLimit(t *testing.T) {
 	if err := s.ensureDir(); err != nil {
 		t.Fatal(err)
 	}
-	// Create a file that exceeds maxFileSize
 	path := filepath.Join(s.Dir, "huge.md")
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Write just over the limit
 	data := make([]byte, maxFileSize+1)
 	for i := range data {
 		data[i] = 'x'
@@ -318,7 +328,6 @@ func TestReadListFileSizeLimit(t *testing.T) {
 }
 
 func TestWriteListEnsureDirFail(t *testing.T) {
-	// Point at a path where the parent is a file, so MkdirAll fails
 	dir := t.TempDir()
 	blocker := filepath.Join(dir, "blocker")
 	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
@@ -329,5 +338,181 @@ func TestWriteListEnsureDirFail(t *testing.T) {
 	err := s.WriteList("test", []Line{{Todo: &Todo{Text: "item", Done: false}}})
 	if err == nil {
 		t.Error("expected error when ensureDir fails")
+	}
+}
+
+func TestListAll_Empty(t *testing.T) {
+	s := New(t.TempDir())
+	summaries, err := s.ListAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 0 {
+		t.Errorf("expected 0 summaries, got %d", len(summaries))
+	}
+}
+
+func TestListAll_WithLists(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "todo.md"), []byte("- [ ] Buy milk\n- [x] Buy eggs\n- [ ] Buy bread\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte("- [ ] Review PR\n- [ ] Write docs\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(dir)
+	summaries, err := s.ListAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 summaries, got %d", len(summaries))
+	}
+
+	if summaries[0].Name != "todo" {
+		t.Errorf("expected first list 'todo', got %q", summaries[0].Name)
+	}
+	if summaries[0].Total != 3 || summaries[0].Completed != 1 {
+		t.Errorf("todo: expected 3 total, 1 completed; got %d total, %d completed", summaries[0].Total, summaries[0].Completed)
+	}
+	if summaries[1].Name != "work" {
+		t.Errorf("expected second list 'work', got %q", summaries[1].Name)
+	}
+	if summaries[1].Total != 2 || summaries[1].Completed != 0 {
+		t.Errorf("work: expected 2 total, 0 completed; got %d total, %d completed", summaries[1].Total, summaries[1].Completed)
+	}
+}
+
+func TestListAll_EmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "empty.md"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(dir)
+	summaries, err := s.ListAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	if summaries[0].Total != 0 || summaries[0].Completed != 0 {
+		t.Errorf("expected 0/0, got %d/%d", summaries[0].Completed, summaries[0].Total)
+	}
+}
+
+func TestCreateList(t *testing.T) {
+	s := New(t.TempDir())
+
+	if err := s.CreateList("shopping"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(s.Dir, "shopping.md")); err != nil {
+		t.Errorf("expected file to exist: %v", err)
+	}
+
+	if err := s.CreateList("shopping"); err != ErrListExists {
+		t.Errorf("expected ErrListExists, got %v", err)
+	}
+}
+
+func TestCreateList_InvalidName(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.CreateList("my list!"); err != ErrInvalidName {
+		t.Errorf("expected ErrInvalidName, got %v", err)
+	}
+}
+
+func TestRenameList(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "shopping.md"), []byte("- [ ] Milk\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(dir)
+	if err := s.RenameList("shopping", "groceries"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "shopping.md")); !os.IsNotExist(err) {
+		t.Error("expected old file to be removed")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "groceries.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "- [ ] Milk\n" {
+		t.Errorf("content mismatch: %q", data)
+	}
+}
+
+func TestRenameList_SourceMissing(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.RenameList("foo", "bar"); err != ErrListNotFound {
+		t.Errorf("expected ErrListNotFound, got %v", err)
+	}
+}
+
+func TestRenameList_TargetExists(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.md"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(dir)
+	if err := s.RenameList("a", "b"); err != ErrListExists {
+		t.Errorf("expected ErrListExists, got %v", err)
+	}
+}
+
+func TestDeleteList(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "temp.md"), []byte("- [ ] Something\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(dir)
+	if err := s.DeleteList("temp"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "temp.md")); !os.IsNotExist(err) {
+		t.Error("expected file to be removed")
+	}
+}
+
+func TestDeleteList_Missing(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.DeleteList("nonexistent"); err != ErrListNotFound {
+		t.Errorf("expected ErrListNotFound, got %v", err)
+	}
+}
+
+func TestCountTodos(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "test.md"), []byte("- [ ] One\n- [x] Two\n- [X] Three\nNot a todo\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(dir)
+	total, completed, err := s.CountTodos("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 3 || completed != 2 {
+		t.Errorf("expected 3 total, 2 completed; got %d total, %d completed", total, completed)
+	}
+}
+
+func TestCountTodos_Missing(t *testing.T) {
+	s := New(t.TempDir())
+	_, _, err := s.CountTodos("nonexistent")
+	if err != ErrListNotFound {
+		t.Errorf("expected ErrListNotFound, got %v", err)
 	}
 }

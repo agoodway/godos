@@ -1,0 +1,32 @@
+Prepare-for-takeoff complete for **list-management**. Here's what was created:
+
+### Epic
+- **td-1488ed** — List Management Commands
+
+### Storage Layer (backend, no dependencies)
+| ID | Task |
+|---|---|
+| td-aad6a4 | Add ListSummary struct and ListAll method to store |
+| td-5f100b | Add CreateList method to store |
+| td-c0a7f2 | Add RenameList method to store |
+| td-9b8a54 | Add DeleteList method to store |
+| td-76debf | Add list name validation function |
+
+### CLI Commands (frontend, depend on backend tasks)
+| ID | Task | Depends On |
+|---|---|---|
+| td-0e7a93 | Implement lists root command | td-aad6a4 |
+| td-9d82b4 | Implement lists create subcommand | td-5f100b, td-76debf |
+| td-255c0d | Implement lists rename subcommand | td-c0a7f2, td-76debf |
+| td-834463 | Implement lists delete subcommand | td-9b8a54 |
+
+### Polish (depends on all CLI commands)
+| ID | Task | Depends On |
+|---|---|---|
+| td-8da594 | Add user-friendly output messages | all CLI issues |
+| td-0aa6df | Smoke test end-to-end | td-8da594 |
+
+### Review Gate
+- **td-b7fca1** — Review all work (depends on all 11 issues above)
+
+All 11 checkboxes in `tasks.md` have been marked as imported `[x]`.

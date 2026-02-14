@@ -1,12 +1,42 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 )
+
+var (
+	// ErrListExists is returned when creating a list that already exists.
+	ErrListExists = errors.New("list already exists")
+	// ErrListNotFound is returned when operating on a list that does not exist.
+	ErrListNotFound = errors.New("list not found")
+	// ErrInvalidName is returned when a list name contains invalid characters.
+	ErrInvalidName = errors.New("invalid list name: use only letters, numbers, hyphens, and underscores")
+)
+
+var validName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+
+// ValidateName checks if a list name is valid for use as a filename.
+// Names must contain only alphanumeric characters, hyphens, and underscores,
+// and must start with an alphanumeric character.
+func ValidateName(name string) error {
+	if !validName.MatchString(name) {
+		return ErrInvalidName
+	}
+	return nil
+}
+
+// ListSummary holds per-list metadata for display.
+type ListSummary struct {
+	Name      string
+	Total     int
+	Completed int
+}
 
 // Store manages todo lists stored as markdown files in a directory.
 type Store struct {
@@ -26,6 +56,9 @@ func (s *Store) ensureDir() error {
 // lockList acquires an exclusive file lock for the named list.
 // Returns an unlock function that must be called when done.
 func (s *Store) lockList(name string) (unlock func(), err error) {
+	if err := ValidateName(name); err != nil {
+		return nil, err
+	}
 	if err := s.ensureDir(); err != nil {
 		return nil, fmt.Errorf("creating storage directory: %w", err)
 	}
@@ -45,11 +78,11 @@ func (s *Store) lockList(name string) (unlock func(), err error) {
 }
 
 // listPath returns the file path for a named list.
-// It validates the name does not contain path traversal sequences.
 func (s *Store) listPath(name string) (string, error) {
-	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." || strings.Contains(name, "..") {
-		return "", fmt.Errorf("invalid list name %q: must not contain path separators or traversal sequences", name)
+	if err := ValidateName(name); err != nil {
+		return "", err
 	}
+
 	p := filepath.Join(s.Dir, name+".md")
 	absDir, err := filepath.Abs(s.Dir)
 	if err != nil {
@@ -88,7 +121,7 @@ func (s *Store) ReadList(name string) ([]Line, error) {
 		return nil, err
 	}
 	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
@@ -158,7 +191,7 @@ func (s *Store) WriteList(name string, lines []Line) error {
 // Lists returns all list names by scanning for *.md files in the storage directory.
 func (s *Store) Lists() ([]string, error) {
 	entries, err := os.ReadDir(s.Dir)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
@@ -171,10 +204,124 @@ func (s *Store) Lists() ([]string, error) {
 			continue
 		}
 		if strings.HasSuffix(e.Name(), ".md") {
-			names = append(names, strings.TrimSuffix(e.Name(), ".md"))
+			name := strings.TrimSuffix(e.Name(), ".md")
+			if ValidateName(name) == nil {
+				names = append(names, name)
+			}
 		}
 	}
 	return names, nil
+}
+
+// ListAll scans *.md files in the storage directory and returns a summary for each.
+func (s *Store) ListAll() ([]ListSummary, error) {
+	names, err := s.Lists()
+	if err != nil {
+		return nil, err
+	}
+
+	summaries := make([]ListSummary, 0, len(names))
+	for _, name := range names {
+		total, completed, err := s.CountTodos(name)
+		if err != nil {
+			return nil, fmt.Errorf("reading list %q: %w", name, err)
+		}
+		summaries = append(summaries, ListSummary{
+			Name:      name,
+			Total:     total,
+			Completed: completed,
+		})
+	}
+	return summaries, nil
+}
+
+// CreateList creates an empty list file. Returns ErrListExists if the file already exists.
+func (s *Store) CreateList(name string) error {
+	if err := s.ensureDir(); err != nil {
+		return fmt.Errorf("creating storage directory: %w", err)
+	}
+
+	path, err := s.listPath(name)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return ErrListExists
+		}
+		return fmt.Errorf("creating list: %w", err)
+	}
+	return f.Close()
+}
+
+// RenameList renames a list file. Returns ErrListNotFound if the source doesn't exist,
+// or ErrListExists if the target already exists.
+func (s *Store) RenameList(oldName, newName string) error {
+	oldPath, err := s.listPath(oldName)
+	if err != nil {
+		return err
+	}
+	newPath, err := s.listPath(newName)
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(oldPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ErrListNotFound
+		}
+		return err
+	}
+	if _, err := os.Stat(newPath); err == nil {
+		return ErrListExists
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	return os.Rename(oldPath, newPath)
+}
+
+// DeleteList removes a list file. Returns ErrListNotFound if it doesn't exist.
+func (s *Store) DeleteList(name string) error {
+	path, err := s.listPath(name)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ErrListNotFound
+		}
+		return fmt.Errorf("deleting list: %w", err)
+	}
+	return nil
+}
+
+// CountTodos returns the total and completed todo count for a named list.
+func (s *Store) CountTodos(name string) (total, completed int, err error) {
+	path, err := s.listPath(name)
+	if err != nil {
+		return 0, 0, err
+	}
+	if _, statErr := os.Stat(path); statErr != nil {
+		if errors.Is(statErr, os.ErrNotExist) {
+			return 0, 0, ErrListNotFound
+		}
+		return 0, 0, statErr
+	}
+	lines, err := s.ReadList(name)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, line := range lines {
+		if line.Todo != nil {
+			total++
+			if line.Todo.Done {
+				completed++
+			}
+		}
+	}
+	return total, completed, nil
 }
 
 // Add appends a new incomplete todo to the named list.

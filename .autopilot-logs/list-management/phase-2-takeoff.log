@@ -1,0 +1,20 @@
+All 11 issues are in review, all tests pass (26 tests across 3 packages), and end-to-end smoke tests confirm everything works.
+
+Here's a summary of what was implemented:
+
+**Branch:** `feat/add-configure-command` (stayed on existing branch)
+**Work session:** `ws-b97d` — "Epic: List Management Commands"
+**Issues:** 11 started, 11 submitted for review (review gate `td-b7fca1` skipped as required)
+
+**Files created:**
+- `internal/store/store.go` — Store package with `ValidateName`, `ListSummary`/`ListAll`, `CreateList`, `RenameList`, `DeleteList`, `CountTodos`
+- `internal/store/store_test.go` — 13 tests covering all store operations and edge cases
+- `cmd/lists.go` — `lists` command group with `create`, `rename`, `delete` subcommands; `GODOS_DIR` env for testability
+- `cmd/lists_test.go` — 9 tests covering all CLI commands and error paths
+
+**Key decisions:**
+- Store directory configurable via `GODOS_DIR` env var, defaults to `~/.godos`
+- Name validation: must start with alphanumeric, allows letters/numbers/hyphens/underscores
+- `CreateList` uses `O_CREATE|O_EXCL` for atomic creation
+- `RenameList` uses `os.Rename` for atomic file rename
+- Delete confirmation shows todo count, `--force`/`-f` flag to skip
