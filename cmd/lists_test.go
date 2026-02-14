@@ -140,6 +140,57 @@ func TestListsDelete_Missing(t *testing.T) {
 	}
 }
 
+func TestListsDelete_ConfirmYes(t *testing.T) {
+	dir := setupListsTestDir(t)
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, "temp.md"), []byte("- [ ] Task\n"), 0644)
+
+	out, err := executeCommandWithInput(t, strings.NewReader("y\n"), "lists", "delete", "temp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "Deleted") {
+		t.Errorf("expected delete confirmation, got %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "temp.md")); !os.IsNotExist(err) {
+		t.Error("expected file to be removed")
+	}
+}
+
+func TestListsDelete_ConfirmNo(t *testing.T) {
+	dir := setupListsTestDir(t)
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, "temp.md"), []byte("- [ ] Task\n"), 0644)
+
+	out, err := executeCommandWithInput(t, strings.NewReader("n\n"), "lists", "delete", "temp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "Cancelled") {
+		t.Errorf("expected cancel message, got %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "temp.md")); err != nil {
+		t.Error("expected file to still exist")
+	}
+}
+
+func TestListsDelete_ConfirmEmpty(t *testing.T) {
+	dir := setupListsTestDir(t)
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, "temp.md"), []byte("- [ ] Task\n"), 0644)
+
+	out, err := executeCommandWithInput(t, strings.NewReader("\n"), "lists", "delete", "temp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "Cancelled") {
+		t.Errorf("expected cancel message, got %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "temp.md")); err != nil {
+		t.Error("expected file to still exist")
+	}
+}
+
 func TestListsHelp(t *testing.T) {
 	out, err := executeCommand(t, "lists", "--help")
 	if err != nil {

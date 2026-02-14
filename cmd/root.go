@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/goodway/godos/config"
 	"github.com/goodway/godos/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +19,7 @@ var (
 
 func getStore() *store.Store {
 	storeOnce.Do(func() {
-		todoStore = store.New(dirFlag)
+		todoStore = store.New(resolveStoreDir())
 	})
 	return todoStore
 }
@@ -31,10 +32,25 @@ func defaultDir() string {
 	return filepath.Join(home, ".godos")
 }
 
+// resolveStoreDir returns the storage directory using the cascade:
+// GODOS_DIR env > explicit --dir > config default_dir > ~/.godos.
+func resolveStoreDir() string {
+	if dir := os.Getenv("GODOS_DIR"); dir != "" {
+		return dir
+	}
+	if dirFlag != "" {
+		return dirFlag
+	}
+	if dir, err := config.Get("default_dir"); err == nil && dir != "" {
+		return dir
+	}
+	return defaultDir()
+}
+
 var rootCmd = &cobra.Command{
 	Use:           "godos",
-	Short:         "A simple CLI todo manager backed by markdown files",
-	Long:          `godos manages your todos as markdown checkbox lists. Each list is a .md file with - [ ] and - [x] entries.`,
+	Short:         "A CLI tool for managing todo lists",
+	Long:          `godos is a command-line todo list manager. Create, organize, and track tasks across multiple lists.`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
@@ -47,5 +63,5 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&dirFlag, "dir", defaultDir(), "storage directory for todo lists")
+	rootCmd.PersistentFlags().StringVar(&dirFlag, "dir", "", "storage directory for todo lists")
 }

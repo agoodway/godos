@@ -98,6 +98,24 @@ func Get(key string) (string, error) {
 	return v, nil
 }
 
+// Delete loads the config, removes the key, and saves.
+func Delete(key string) error {
+	m, err := Load()
+	if errors.Is(err, ErrNotFound) {
+		return fmt.Errorf("key %q is not set", key)
+	}
+	if err != nil {
+		return err
+	}
+
+	if _, ok := m[key]; !ok {
+		return fmt.Errorf("key %q is not set", key)
+	}
+
+	delete(m, key)
+	return Save(m)
+}
+
 // Set loads the config, sets the key-value pair, and saves.
 func Set(key, value string) error {
 	m, err := Load()

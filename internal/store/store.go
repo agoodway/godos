@@ -17,6 +17,8 @@ var (
 	ErrListNotFound = errors.New("list not found")
 	// ErrInvalidName is returned when a list name contains invalid characters.
 	ErrInvalidName = errors.New("invalid list name: use only letters, numbers, hyphens, and underscores")
+	// ErrNameTooLong is returned when a list name exceeds the maximum length.
+	ErrNameTooLong = errors.New("list name too long: maximum 255 characters")
 )
 
 var validName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
@@ -25,6 +27,9 @@ var validName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 // Names must contain only alphanumeric characters, hyphens, and underscores,
 // and must start with an alphanumeric character.
 func ValidateName(name string) error {
+	if len(name) > 255 {
+		return ErrNameTooLong
+	}
 	if !validName.MatchString(name) {
 		return ErrInvalidName
 	}
@@ -96,8 +101,6 @@ func (s *Store) listPath(name string) (string, error) {
 		return "", fmt.Errorf("invalid list name %q: resolved path escapes storage directory", name)
 	}
 
-	// If the file already exists, verify that its real path (resolving symlinks)
-	// does not escape the storage directory.
 	if realPath, err := filepath.EvalSymlinks(p); err == nil {
 		realDir, err2 := filepath.EvalSymlinks(s.Dir)
 		if err2 != nil {
@@ -180,7 +183,6 @@ func (s *Store) WriteList(name string, lines []Line) error {
 		return fmt.Errorf("renaming temp file: %w", err)
 	}
 
-	// Fsync the directory to ensure the rename is durable across crashes.
 	if dir, err := os.Open(s.Dir); err == nil {
 		dir.Sync()
 		dir.Close()
@@ -267,19 +269,17 @@ func (s *Store) RenameList(oldName, newName string) error {
 		return err
 	}
 
-	if _, err := os.Stat(oldPath); err != nil {
+	// Link fails atomically if the target already exists.
+	if err := os.Link(oldPath, newPath); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return ErrListExists
+		}
 		if errors.Is(err, os.ErrNotExist) {
 			return ErrListNotFound
 		}
-		return err
+		return fmt.Errorf("renaming list: %w", err)
 	}
-	if _, err := os.Stat(newPath); err == nil {
-		return ErrListExists
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-
-	return os.Rename(oldPath, newPath)
+	return os.Remove(oldPath)
 }
 
 // DeleteList removes a list file. Returns ErrListNotFound if it doesn't exist.

@@ -2,20 +2,48 @@ package cmd
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 )
 
 func executeCommand(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	return executeCommandWithInput(t, nil, args...)
+}
+
+func executeCommandWithInput(t *testing.T, stdin io.Reader, args ...string) (string, error) {
 	t.Helper()
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
 	rootCmd.SetErr(buf)
 	rootCmd.SetArgs(args)
+	if stdin != nil {
+		rootCmd.SetIn(stdin)
+		// Cobra doesn't propagate stdin to subcommands, so set it on all of them.
+		for _, c := range rootCmd.Commands() {
+			c.SetIn(stdin)
+			for _, sc := range c.Commands() {
+				sc.SetIn(stdin)
+			}
+		}
+	}
 	defer func() {
 		rootCmd.SetOut(nil)
 		rootCmd.SetErr(nil)
 		rootCmd.SetArgs(nil)
+		rootCmd.SetIn(nil)
+		// Reset flags and stdin on all subcommands to prevent test contamination.
+		for _, c := range rootCmd.Commands() {
+			c.SetIn(nil)
+			c.Flags().Visit(func(f *pflag.Flag) { f.Value.Set(f.DefValue) })
+			for _, sc := range c.Commands() {
+				sc.SetIn(nil)
+				sc.Flags().Visit(func(f *pflag.Flag) { f.Value.Set(f.DefValue) })
+			}
+		}
 	}()
 	err := rootCmd.Execute()
 	return buf.String(), err

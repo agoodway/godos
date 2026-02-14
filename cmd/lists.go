@@ -4,30 +4,18 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/goodway/godos/internal/store"
 	"github.com/spf13/cobra"
 )
 
-func defaultStoreDir() string {
-	if dir := os.Getenv("GODOS_DIR"); dir != "" {
-		return dir
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
-	}
-	return home + "/.godos"
-}
-
 var listsCmd = &cobra.Command{
 	Use:   "lists",
 	Short: "Manage todo lists",
 	Long:  `List, create, rename, and delete todo lists.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := store.New(defaultStoreDir())
+		s := store.New(resolveStoreDir())
 		summaries, err := s.ListAll()
 		if err != nil {
 			return err
@@ -49,10 +37,7 @@ var listsCreateCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if err := store.ValidateName(name); err != nil {
-			return err
-		}
-		s := store.New(defaultStoreDir())
+		s := store.New(resolveStoreDir())
 		if err := s.CreateList(name); err != nil {
 			if errors.Is(err, store.ErrListExists) {
 				return fmt.Errorf("list %q already exists", name)
@@ -70,10 +55,7 @@ var listsRenameCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		oldName, newName := args[0], args[1]
-		if err := store.ValidateName(newName); err != nil {
-			return fmt.Errorf("invalid new name: %w", err)
-		}
-		s := store.New(defaultStoreDir())
+		s := store.New(resolveStoreDir())
 		if err := s.RenameList(oldName, newName); err != nil {
 			if errors.Is(err, store.ErrListNotFound) {
 				return fmt.Errorf("list %q does not exist", oldName)
@@ -94,7 +76,7 @@ var listsDeleteCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		s := store.New(defaultStoreDir())
+		s := store.New(resolveStoreDir())
 
 		force, _ := cmd.Flags().GetBool("force")
 		if !force {

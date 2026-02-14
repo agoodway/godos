@@ -404,13 +404,14 @@ func TestListAll_EmptyFile(t *testing.T) {
 }
 
 func TestCreateList(t *testing.T) {
-	s := New(t.TempDir())
+	dir := t.TempDir()
+	s := New(dir)
 
 	if err := s.CreateList("shopping"); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := os.Stat(filepath.Join(s.Dir, "shopping.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "shopping.md")); err != nil {
 		t.Errorf("expected file to exist: %v", err)
 	}
 
