@@ -15,7 +15,7 @@ var addCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		text := strings.Join(args, " ")
-		if err := todoStore.Add(addListFlag, text); err != nil {
+		if err := getStore().Add(addListFlag, text); err != nil {
 			return err
 		}
 		fmt.Printf("Added \"%s\" to %s\n", text, addListFlag)

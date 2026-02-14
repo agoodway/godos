@@ -4,15 +4,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/goodway/godos/internal/store"
 	"github.com/spf13/cobra"
 )
 
 var (
-	dirFlag    string
-	todoStore  *store.Store
+	dirFlag   string
+	storeOnce sync.Once
+	todoStore *store.Store
 )
+
+func getStore() *store.Store {
+	storeOnce.Do(func() {
+		todoStore = store.New(dirFlag)
+	})
+	return todoStore
+}
 
 func defaultDir() string {
 	home, err := os.UserHomeDir()
@@ -28,9 +37,6 @@ var rootCmd = &cobra.Command{
 	Long:          `godos manages your todos as markdown checkbox lists. Each list is a .md file with - [ ] and - [x] entries.`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		todoStore = store.New(dirFlag)
-	},
 }
 
 func Execute() {

@@ -140,3 +140,30 @@ func TestTodoIndex(t *testing.T) {
 		}
 	}
 }
+
+func TestParseMarkdown_BareCheckbox(t *testing.T) {
+	tests := []struct {
+		input string
+		done  bool
+	}{
+		{"- [ ]\n", false},
+		{"- [x]\n", true},
+		{"- [X]\n", true},
+	}
+	for _, tt := range tests {
+		lines := ParseMarkdown(tt.input)
+		if len(lines) != 1 {
+			t.Fatalf("input %q: expected 1 line, got %d", tt.input, len(lines))
+		}
+		if lines[0].Todo == nil {
+			t.Errorf("input %q: expected todo, got raw line", tt.input)
+			continue
+		}
+		if lines[0].Todo.Text != "" {
+			t.Errorf("input %q: expected empty text, got %q", tt.input, lines[0].Todo.Text)
+		}
+		if lines[0].Todo.Done != tt.done {
+			t.Errorf("input %q: expected done=%v, got %v", tt.input, tt.done, lines[0].Todo.Done)
+		}
+	}
+}

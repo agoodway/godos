@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	listListFlag string
+	listNameFlag string
 	listAllFlag  bool
 )
 
@@ -18,12 +18,12 @@ var listCmd = &cobra.Command{
 		if listAllFlag {
 			return listAll()
 		}
-		return listOne(listListFlag)
+		return listOne(listNameFlag)
 	},
 }
 
 func listOne(name string) error {
-	todos, err := todoStore.ListTodos(name)
+	todos, err := getStore().ListTodos(name)
 	if err != nil {
 		return err
 	}
@@ -42,7 +42,7 @@ func listOne(name string) error {
 }
 
 func listAll() error {
-	names, err := todoStore.Lists()
+	names, err := getStore().Lists()
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func listAll() error {
 }
 
 func init() {
-	listCmd.Flags().StringVar(&listListFlag, "list", "todo", "list name to display")
+	listCmd.Flags().StringVar(&listNameFlag, "list", "todo", "list name to display")
 	listCmd.Flags().BoolVar(&listAllFlag, "all", false, "show all lists")
 	rootCmd.AddCommand(listCmd)
 }

@@ -19,6 +19,8 @@ type Line struct {
 
 // ParseMarkdown parses markdown content into a slice of Lines,
 // preserving non-todo lines for round-trip fidelity.
+// Note: Indented todo lines (e.g. "  - [ ] nested") lose their indentation
+// on round-trip because TrimSpace strips leading whitespace before matching.
 func ParseMarkdown(content string) []Line {
 	if content == "" {
 		return nil
@@ -35,9 +37,13 @@ func ParseMarkdown(content string) []Line {
 		if strings.HasPrefix(trimmed, "- [ ] ") {
 			text := strings.TrimPrefix(trimmed, "- [ ] ")
 			lines = append(lines, Line{Todo: &Todo{Text: text, Done: false}})
+		} else if trimmed == "- [ ]" {
+			lines = append(lines, Line{Todo: &Todo{Text: "", Done: false}})
 		} else if strings.HasPrefix(trimmed, "- [x] ") || strings.HasPrefix(trimmed, "- [X] ") {
 			text := trimmed[6:] // skip "- [x] " or "- [X] "
 			lines = append(lines, Line{Todo: &Todo{Text: text, Done: true}})
+		} else if trimmed == "- [x]" || trimmed == "- [X]" {
+			lines = append(lines, Line{Todo: &Todo{Text: "", Done: true}})
 		} else {
 			lines = append(lines, Line{Raw: raw})
 		}

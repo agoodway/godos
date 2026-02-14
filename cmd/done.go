@@ -19,7 +19,7 @@ var doneCmd = &cobra.Command{
 			return fmt.Errorf("invalid todo number %q", args[0])
 		}
 
-		text, alreadyDone, err := todoStore.Complete(doneListFlag, n)
+		text, alreadyDone, err := getStore().Complete(doneListFlag, n)
 		if err != nil {
 			return err
 		}

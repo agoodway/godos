@@ -19,7 +19,7 @@ var rmCmd = &cobra.Command{
 			return fmt.Errorf("invalid todo number %q", args[0])
 		}
 
-		text, err := todoStore.Remove(rmListFlag, n)
+		text, err := getStore().Remove(rmListFlag, n)
 		if err != nil {
 			return err
 		}

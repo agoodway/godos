@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // Store manages todo lists stored as markdown files in a directory.
@@ -20,6 +21,27 @@ func New(dir string) *Store {
 // ensureDir creates the storage directory if it does not exist.
 func (s *Store) ensureDir() error {
 	return os.MkdirAll(s.Dir, 0o700)
+}
+
+// lockList acquires an exclusive file lock for the named list.
+// Returns an unlock function that must be called when done.
+func (s *Store) lockList(name string) (unlock func(), err error) {
+	if err := s.ensureDir(); err != nil {
+		return nil, fmt.Errorf("creating storage directory: %w", err)
+	}
+	lockPath := filepath.Join(s.Dir, "."+name+".lock")
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("opening lock file: %w", err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("acquiring lock: %w", err)
+	}
+	return func() {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+	}, nil
 }
 
 // listPath returns the file path for a named list.
@@ -40,8 +62,24 @@ func (s *Store) listPath(name string) (string, error) {
 	if !strings.HasPrefix(absP, absDir+string(filepath.Separator)) {
 		return "", fmt.Errorf("invalid list name %q: resolved path escapes storage directory", name)
 	}
+
+	// If the file already exists, verify that its real path (resolving symlinks)
+	// does not escape the storage directory.
+	if realPath, err := filepath.EvalSymlinks(p); err == nil {
+		realDir, err2 := filepath.EvalSymlinks(s.Dir)
+		if err2 != nil {
+			return "", fmt.Errorf("resolving storage directory symlinks: %w", err2)
+		}
+		if !strings.HasPrefix(realPath, realDir+string(filepath.Separator)) {
+			return "", fmt.Errorf("invalid list name %q: resolved path escapes storage directory via symlink", name)
+		}
+	}
+
 	return p, nil
 }
+
+// maxFileSize is the maximum list file size ReadList will accept (10MB).
+const maxFileSize = 10 * 1024 * 1024
 
 // ReadList reads and parses a list file. Returns empty lines if the file doesn't exist.
 func (s *Store) ReadList(name string) ([]Line, error) {
@@ -49,10 +87,17 @@ func (s *Store) ReadList(name string) ([]Line, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > maxFileSize {
+		return nil, fmt.Errorf("list file %q is too large (%d bytes, max %d)", name, info.Size(), maxFileSize)
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +122,12 @@ func (s *Store) WriteList(name string, lines []Line) error {
 	}
 	tmpName := tmp.Name()
 
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("setting temp file permissions: %w", err)
+	}
+
 	if _, err := tmp.WriteString(content); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
@@ -95,6 +146,12 @@ func (s *Store) WriteList(name string, lines []Line) error {
 		os.Remove(tmpName)
 		return fmt.Errorf("renaming temp file: %w", err)
 	}
+
+	// Fsync the directory to ensure the rename is durable across crashes.
+	if dir, err := os.Open(s.Dir); err == nil {
+		dir.Sync()
+		dir.Close()
+	}
 	return nil
 }
 
@@ -110,7 +167,7 @@ func (s *Store) Lists() ([]string, error) {
 
 	var names []string
 	for _, e := range entries {
-		if e.IsDir() {
+		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		if strings.HasSuffix(e.Name(), ".md") {
@@ -122,6 +179,17 @@ func (s *Store) Lists() ([]string, error) {
 
 // Add appends a new incomplete todo to the named list.
 func (s *Store) Add(listName, text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return fmt.Errorf("todo text must not be empty")
+	}
+
+	unlock, err := s.lockList(listName)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	lines, err := s.ReadList(listName)
 	if err != nil {
 		return err
@@ -133,6 +201,12 @@ func (s *Store) Add(listName, text string) error {
 // Complete marks the nth todo (1-based) as done. Returns the todo text.
 // Returns an error if n is out of range. Returns (text, alreadyDone, err).
 func (s *Store) Complete(listName string, n int) (string, bool, error) {
+	unlock, err := s.lockList(listName)
+	if err != nil {
+		return "", false, err
+	}
+	defer unlock()
+
 	lines, err := s.ReadList(listName)
 	if err != nil {
 		return "", false, err
@@ -158,6 +232,12 @@ func (s *Store) Complete(listName string, n int) (string, bool, error) {
 
 // Remove removes the nth todo (1-based) from the list. Returns the removed todo text.
 func (s *Store) Remove(listName string, n int) (string, error) {
+	unlock, err := s.lockList(listName)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+
 	lines, err := s.ReadList(listName)
 	if err != nil {
 		return "", err
