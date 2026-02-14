@@ -1,16 +1,11 @@
-Prepare-for-takeoff is complete for **go-cli-todo-app**. Here's what was created:
+The tasks have **already been imported** — there are two epics (`td-063ba5` and `td-c213d6`) for "Go CLI Todo App" and all the subtasks from `tasks.md` already exist as td issues (in fact, they were imported twice, creating duplicates). All tasks in `tasks.md` are already checked off (`[x]`).
 
-**Epic:** `td-c213d6` — Go CLI Todo App
+**Prepare for Takeoff is already complete for `go-cli-todo-app`.** Here's the current state:
 
-**17 issues** created across 5 groups with dependency chains:
+- All 17 subtask lines in `tasks.md` are checked off
+- Two epics exist (looks like a duplicate import occurred previously)
+- All implementation issues are in `in_review` status
+- Review gate issues and several review-finding bugs/tasks are `open`
+- 3 additional P1 issues exist (path traversal fix, tests, RunE refactor)
 
-| Group | Issues | Tags | Depends On |
-|-------|--------|------|------------|
-| 1. Project Setup | `td-8e7b31`, `td-c7b2e2` | `setup` | — (unblocked) |
-| 2. Storage Layer | `td-8d18e2`, `td-1c55b9`, `td-c728d6`, `td-3fb99d`, `td-ec80ad` | `backend` | Setup |
-| 3. Core Operations | `td-127d4b`, `td-8a6a55`, `td-0e1881`, `td-c78aa5` | `backend` | Storage Layer |
-| 4. CLI Commands | `td-359b7d`, `td-cafc6b`, `td-3b8665`, `td-fc40cf`, `td-2f08fc` | `frontend` | Core Operations |
-| 5. Polish | `td-8f7d8e`, `td-23ca1f` | `frontend`/`test` | CLI Commands |
-| Review Gate | `td-5b50a5` | `review` | All 16 issues |
-
-Note: There appear to be pre-existing issues from a prior import (the `in_review` set). You may want to close those duplicates if they're stale.
+The next step in your workflow would be `/pre-landing-check` (to review the work) or `/prepare-for-landing` (if review findings already exist to fix). Since review-finding issues already exist (`td-e66fb0`, `td-556a14`, `td-7d88e5`, `td-0579d4`, `td-61104f`, `td-004d1c`, `td-aaefb1`, `td-1e0ff7`), it looks like a pre-landing check was already run too.
