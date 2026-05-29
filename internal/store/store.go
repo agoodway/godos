@@ -15,15 +15,19 @@ var (
 	ErrListExists = errors.New("list already exists")
 	// ErrListNotFound is returned when operating on a list that does not exist.
 	ErrListNotFound = errors.New("list not found")
-	// ErrInvalidName is returned when a list name contains invalid characters.
-	ErrInvalidName = errors.New("invalid list name: use only letters, numbers, hyphens, and underscores")
-	// ErrNameTooLong is returned when a list name exceeds the maximum length.
-	ErrNameTooLong = errors.New("list name too long: maximum 255 characters")
+	// ErrNoteExists is returned when creating a note that already exists.
+	ErrNoteExists = errors.New("note already exists")
+	// ErrNoteNotFound is returned when operating on a note that does not exist.
+	ErrNoteNotFound = errors.New("note not found")
+	// ErrInvalidName is returned when a name contains invalid characters.
+	ErrInvalidName = errors.New("invalid name: use only letters, numbers, hyphens, and underscores")
+	// ErrNameTooLong is returned when a name exceeds the maximum length.
+	ErrNameTooLong = errors.New("name too long: maximum 255 characters")
 )
 
 var validName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
-// ValidateName checks if a list name is valid for use as a filename.
+// ValidateName checks if a name is valid for use as a filename.
 // Names must contain only alphanumeric characters, hyphens, and underscores,
 // and must start with an alphanumeric character.
 func ValidateName(name string) error {
@@ -114,7 +118,239 @@ func (s *Store) listPath(name string) (string, error) {
 	return p, nil
 }
 
-// maxFileSize is the maximum list file size ReadList will accept (10MB).
+// NotesDir returns the notes storage directory.
+func (s *Store) NotesDir() string {
+	return filepath.Join(s.Dir, "notes")
+}
+
+func (s *Store) ensureNotesDir() error {
+	notesDir := s.NotesDir()
+	if info, err := os.Lstat(notesDir); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("notes directory must not be a symlink")
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("notes path is not a directory")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("checking notes directory: %w", err)
+	}
+
+	if err := os.MkdirAll(notesDir, 0o700); err != nil {
+		return fmt.Errorf("creating notes directory: %w", err)
+	}
+
+	if info, err := os.Lstat(notesDir); err != nil {
+		return fmt.Errorf("checking notes directory after create: %w", err)
+	} else if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("notes directory must not be a symlink")
+	}
+
+	return nil
+}
+
+// NotePath returns the file path for a validated note name.
+func (s *Store) NotePath(name string) (string, error) {
+	if err := ValidateName(name); err != nil {
+		return "", err
+	}
+
+	notesDir := s.NotesDir()
+	p := filepath.Join(notesDir, name+".md")
+	absDir, err := filepath.Abs(notesDir)
+	if err != nil {
+		return "", fmt.Errorf("resolving notes directory: %w", err)
+	}
+	absP, err := filepath.Abs(p)
+	if err != nil {
+		return "", fmt.Errorf("resolving note path: %w", err)
+	}
+	if !strings.HasPrefix(absP, absDir+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid note name %q: resolved path escapes notes directory", name)
+	}
+
+	if realPath, err := filepath.EvalSymlinks(p); err == nil {
+		realDir, err2 := filepath.EvalSymlinks(notesDir)
+		if err2 != nil {
+			return "", fmt.Errorf("resolving notes directory symlinks: %w", err2)
+		}
+		if !strings.HasPrefix(realPath, realDir+string(filepath.Separator)) {
+			return "", fmt.Errorf("invalid note name %q: resolved path escapes notes directory via symlink", name)
+		}
+	}
+
+	return p, nil
+}
+
+// CreateNote creates an empty note file at notes/<name>.md.
+func (s *Store) CreateNote(name string) error {
+	path, err := s.NotePath(name)
+	if err != nil {
+		return err
+	}
+
+	if err := s.ensureNotesDir(); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return ErrNoteExists
+		}
+		return fmt.Errorf("creating note: %w", err)
+	}
+	return f.Close()
+}
+
+// ReadNote returns the full contents of a note.
+func (s *Store) ReadNote(name string) (string, error) {
+	path, err := s.NotePath(name)
+	if err != nil {
+		return "", err
+	}
+
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", ErrNoteNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading note metadata: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("refusing to read symlinked note %q", name)
+	}
+
+	statInfo, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", ErrNoteNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("stat note: %w", err)
+	}
+	if statInfo.Size() > maxFileSize {
+		return "", fmt.Errorf("note file %q is too large (%d bytes, max %d)", name, statInfo.Size(), maxFileSize)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", ErrNoteNotFound
+		}
+		return "", fmt.Errorf("reading note: %w", err)
+	}
+	return string(data), nil
+}
+
+// WriteNote writes note content atomically to notes/<name>.md.
+func (s *Store) WriteNote(name string, content string) error {
+	target, err := s.NotePath(name)
+	if err != nil {
+		return err
+	}
+
+	if err := s.ensureNotesDir(); err != nil {
+		return err
+	}
+
+	if info, err := os.Lstat(target); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to write symlinked note %q", name)
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("checking existing note: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(s.NotesDir(), ".godos-note-tmp-*")
+	if err != nil {
+		return fmt.Errorf("creating temp note file: %w", err)
+	}
+	tmpName := tmp.Name()
+
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("setting temp note file permissions: %w", err)
+	}
+
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("writing temp note file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("syncing temp note file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("closing temp note file: %w", err)
+	}
+	if err := os.Rename(tmpName, target); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("renaming temp note file: %w", err)
+	}
+
+	if dir, err := os.Open(s.NotesDir()); err == nil {
+		dir.Sync()
+		dir.Close()
+	}
+
+	return nil
+}
+
+// DeleteNote removes a note file.
+func (s *Store) DeleteNote(name string) error {
+	path, err := s.NotePath(name)
+	if err != nil {
+		return err
+	}
+
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrNoteNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("reading note metadata: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to delete symlinked note %q", name)
+	}
+
+	if err := os.Remove(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ErrNoteNotFound
+		}
+		return fmt.Errorf("deleting note: %w", err)
+	}
+	return nil
+}
+
+// ListNotes returns all note names from notes/*.md.
+func (s *Store) ListNotes() ([]string, error) {
+	entries, err := os.ReadDir(s.NotesDir())
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		if strings.HasSuffix(e.Name(), ".md") {
+			name := strings.TrimSuffix(e.Name(), ".md")
+			if ValidateName(name) == nil {
+				names = append(names, name)
+			}
+		}
+	}
+	return names, nil
+}
+
+// maxFileSize is the maximum list or note file size accepted for reads (10MB).
 const maxFileSize = 10 * 1024 * 1024
 
 // ReadList reads and parses a list file. Returns empty lines if the file doesn't exist.

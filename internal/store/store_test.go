@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -515,5 +516,376 @@ func TestCountTodos_Missing(t *testing.T) {
 	_, _, err := s.CountTodos("nonexistent")
 	if err != ErrListNotFound {
 		t.Errorf("expected ErrListNotFound, got %v", err)
+	}
+}
+
+func TestNotesDir(t *testing.T) {
+	s := New(filepath.Join(t.TempDir(), "data"))
+	got := s.NotesDir()
+	want := filepath.Join(s.Dir, "notes")
+	if got != want {
+		t.Fatalf("NotesDir() = %q, want %q", got, want)
+	}
+}
+
+func TestNotePath(t *testing.T) {
+	s := New(t.TempDir())
+	path, err := s.NotePath("meeting-notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != filepath.Join(s.Dir, "notes", "meeting-notes.md") {
+		t.Fatalf("unexpected note path: %q", path)
+	}
+}
+
+func TestNotePathInvalidName(t *testing.T) {
+	s := New(t.TempDir())
+	if _, err := s.NotePath("../escape"); err != ErrInvalidName {
+		t.Fatalf("expected ErrInvalidName, got %v", err)
+	}
+}
+
+func TestCreateNote(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.CreateNote("meeting-notes"); err != nil {
+		t.Fatal(err)
+	}
+	path, err := s.NotePath("meeting-notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected note file to exist: %v", err)
+	}
+}
+
+func TestCreateNoteDuplicate(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.CreateNote("meeting-notes"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateNote("meeting-notes"); err != ErrNoteExists {
+		t.Fatalf("expected ErrNoteExists, got %v", err)
+	}
+}
+
+func TestCreateNoteInvalidName(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.CreateNote("invalid name!"); err != ErrInvalidName {
+		t.Fatalf("expected ErrInvalidName, got %v", err)
+	}
+	if _, err := os.Stat(s.NotesDir()); !os.IsNotExist(err) {
+		t.Fatalf("expected notes dir to not be created on invalid name, stat err=%v", err)
+	}
+}
+
+func TestReadNote(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.CreateNote("ideas"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WriteNote("ideas", "line one\nline two\n"); err != nil {
+		t.Fatal(err)
+	}
+	content, err := s.ReadNote("ideas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content != "line one\nline two\n" {
+		t.Fatalf("unexpected content: %q", content)
+	}
+}
+
+func TestReadNoteMissing(t *testing.T) {
+	s := New(t.TempDir())
+	_, err := s.ReadNote("missing")
+	if err != ErrNoteNotFound {
+		t.Fatalf("expected ErrNoteNotFound, got %v", err)
+	}
+}
+
+func TestWriteNote(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.WriteNote("ideas", "first\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WriteNote("ideas", "second\n"); err != nil {
+		t.Fatal(err)
+	}
+	path, err := s.NotePath("ideas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "second\n" {
+		t.Fatalf("unexpected content: %q", string(data))
+	}
+}
+
+func TestWriteNoteInvalidName(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.WriteNote("../escape", "x"); err != ErrInvalidName {
+		t.Fatalf("expected ErrInvalidName, got %v", err)
+	}
+	if _, err := os.Stat(s.NotesDir()); !os.IsNotExist(err) {
+		t.Fatalf("expected notes dir to not be created on invalid name, stat err=%v", err)
+	}
+}
+
+func TestDeleteNote(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.CreateNote("meeting-notes"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteNote("meeting-notes"); err != nil {
+		t.Fatal(err)
+	}
+	path, err := s.NotePath("meeting-notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected note file to be deleted, stat err=%v", err)
+	}
+}
+
+func TestDeleteNoteMissing(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.DeleteNote("missing"); err != ErrNoteNotFound {
+		t.Fatalf("expected ErrNoteNotFound, got %v", err)
+	}
+}
+
+func TestListNotes(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.WriteNote("ideas", "one\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WriteNote("meeting-notes", "two\n"); err != nil {
+		t.Fatal(err)
+	}
+	names, err := s.ListNotes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 notes, got %d (%v)", len(names), names)
+	}
+	if names[0] != "ideas" || names[1] != "meeting-notes" {
+		t.Fatalf("unexpected names: %v", names)
+	}
+}
+
+func TestListNotesMissingDir(t *testing.T) {
+	s := New(t.TempDir())
+	names, err := s.ListNotes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names != nil {
+		t.Fatalf("expected nil for missing notes dir, got %v", names)
+	}
+}
+
+func TestReadNoteTooLarge(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.ensureNotesDir(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(s.NotesDir(), "huge.md")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := make([]byte, maxFileSize+1)
+	for i := range data {
+		data[i] = 'x'
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	f.Close()
+
+	_, err = s.ReadNote("huge")
+	if err == nil {
+		t.Fatal("expected error for oversized note")
+	}
+}
+
+func TestCreateNoteReadOnlyDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	s := New(dir)
+	err := s.CreateNote("readonly")
+	if err == nil {
+		t.Fatal("expected error creating note in read-only directory")
+	}
+}
+
+func TestWriteNoteReadOnlyDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	s := New(dir)
+	err := s.WriteNote("readonly", "x")
+	if err == nil {
+		t.Fatal("expected error writing note in read-only directory")
+	}
+}
+
+func TestReadNoteEmptyAfterCreate(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.CreateNote("empty"); err != nil {
+		t.Fatal(err)
+	}
+	content, err := s.ReadNote("empty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content != "" {
+		t.Fatalf("expected empty content, got %q", content)
+	}
+}
+
+func TestReadNoteInvalidName(t *testing.T) {
+	s := New(t.TempDir())
+	_, err := s.ReadNote("../escape")
+	if err != ErrInvalidName {
+		t.Fatalf("expected ErrInvalidName, got %v", err)
+	}
+}
+
+func TestDeleteNoteInvalidName(t *testing.T) {
+	s := New(t.TempDir())
+	err := s.DeleteNote("../escape")
+	if err != ErrInvalidName {
+		t.Fatalf("expected ErrInvalidName, got %v", err)
+	}
+}
+
+func TestNotePathNameTooLong(t *testing.T) {
+	s := New(t.TempDir())
+	name := strings.Repeat("a", 256)
+	_, err := s.NotePath(name)
+	if err != ErrNameTooLong {
+		t.Fatalf("expected ErrNameTooLong, got %v", err)
+	}
+}
+
+func TestWriteNoteTempCleanup(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.WriteNote("ideas", "one"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WriteNote("ideas", "two"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(s.NotesDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name() != "ideas.md" {
+			t.Fatalf("unexpected file left in notes dir: %s", e.Name())
+		}
+	}
+}
+
+func TestWriteNoteRejectsSymlinkTarget(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.ensureNotesDir(); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.md")
+	if err := os.WriteFile(outside, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(s.NotesDir(), "evil.md")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	err := s.WriteNote("evil", "new")
+	if err == nil {
+		t.Fatal("expected symlink target write rejection")
+	}
+}
+
+func TestReadNoteRejectsSymlinkTarget(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.ensureNotesDir(); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.md")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(s.NotesDir(), "evil.md")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	_, err := s.ReadNote("evil")
+	if err == nil {
+		t.Fatal("expected symlink target read rejection")
+	}
+}
+
+func TestDeleteNoteRejectsSymlinkTarget(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.ensureNotesDir(); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.md")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(s.NotesDir(), "evil.md")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	err := s.DeleteNote("evil")
+	if err == nil {
+		t.Fatal("expected symlink target delete rejection")
+	}
+}
+
+func TestListNotesFiltersNonNoteEntries(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.ensureNotesDir(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.NotesDir(), "valid.md"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.NotesDir(), ".hidden.md"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.NotesDir(), "draft.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(s.NotesDir(), "subdir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	names, err := s.ListNotes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "valid" {
+		t.Fatalf("expected only valid note, got %v", names)
 	}
 }
