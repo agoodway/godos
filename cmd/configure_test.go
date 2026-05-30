@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/goodway/godos/config"
 	"github.com/spf13/pflag"
 )
 
@@ -120,6 +121,60 @@ func TestConfigureList(t *testing.T) {
 	}
 	if !strings.Contains(out, "key2: val2") {
 		t.Errorf("expected 'key2: val2' in output, got %q", out)
+	}
+}
+
+func TestConfigureListMasksAPIToken(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	if _, err := executeCommand(t, "configure", "set", "api_token", "secret-token"); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := executeCommand(t, "configure", "list")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(out, "secret-token") {
+		t.Fatalf("expected token to be masked, got %q", out)
+	}
+	if !strings.Contains(out, "api_token: ****") {
+		t.Fatalf("expected masked token output, got %q", out)
+	}
+}
+
+func TestConfigureSetMasksAPIToken(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	out, err := executeCommand(t, "configure", "set", config.APITokenKey, "secret-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(out, "secret-token") {
+		t.Fatalf("expected set output to redact token, got %q", out)
+	}
+	if !strings.Contains(out, "Set api_token = ****") {
+		t.Fatalf("expected redacted set output, got %q", out)
+	}
+}
+
+func TestConfigureGetAPITokenRequiresExplicitReveal(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if _, err := executeCommand(t, "configure", "set", config.APITokenKey, "secret-token"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := executeCommand(t, "configure", "get", config.APITokenKey)
+	if err == nil || !strings.Contains(err.Error(), "refusing to print api_token") {
+		t.Fatalf("expected refusal to print token, got %v", err)
+	}
+
+	out, err := executeCommand(t, "configure", "get", config.APITokenKey, "--show-secret")
+	if err != nil {
+		t.Fatalf("expected explicit reveal to succeed: %v", err)
+	}
+	if !strings.Contains(out, "secret-token") {
+		t.Fatalf("expected revealed token, got %q", out)
 	}
 }
 

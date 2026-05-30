@@ -1,0 +1,5 @@
+package: todexapi
+generate:
+  client: true
+  models: true
+output: client.gen.go

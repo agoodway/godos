@@ -27,17 +27,23 @@ var configureSetCmd = &cobra.Command{
 		if err := config.Set(key, value); err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Set %s = %s\n", key, value)
+		fmt.Fprintf(cmd.OutOrStdout(), "Set %s = %s\n", key, displayConfigValue(key, value))
 		return nil
 	},
 }
+
+var configureGetShowSecret bool
 
 var configureGetCmd = &cobra.Command{
 	Use:   "get <key>",
 	Short: "Get a configuration value",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		value, err := config.Get(args[0])
+		key := args[0]
+		if key == config.APITokenKey && !configureGetShowSecret {
+			return fmt.Errorf("refusing to print api_token; rerun with --show-secret to reveal it")
+		}
+		value, err := config.Get(key)
 		if err != nil {
 			return err
 		}
@@ -71,7 +77,8 @@ var configureListCmd = &cobra.Command{
 		sort.Strings(keys)
 
 		for _, k := range keys {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", k, m[k])
+			value := m[k]
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", k, displayConfigValue(k, value))
 		}
 		return nil
 	},
@@ -92,9 +99,17 @@ var configureDeleteCmd = &cobra.Command{
 }
 
 func init() {
+	configureGetCmd.Flags().BoolVar(&configureGetShowSecret, "show-secret", false, "print secret values without redaction")
 	configureCmd.AddCommand(configureSetCmd)
 	configureCmd.AddCommand(configureGetCmd)
 	configureCmd.AddCommand(configureListCmd)
 	configureCmd.AddCommand(configureDeleteCmd)
 	rootCmd.AddCommand(configureCmd)
+}
+
+func displayConfigValue(key, value string) string {
+	if key == config.APITokenKey && value != "" {
+		return "****"
+	}
+	return value
 }

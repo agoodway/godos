@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/goodway/godos/internal/store"
+	"github.com/goodway/godos/internal/todex"
 	"github.com/spf13/cobra"
 )
 
@@ -15,8 +16,11 @@ var listsCmd = &cobra.Command{
 	Short: "Manage todo lists",
 	Long:  `List, create, rename, and delete todo lists.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := store.New(resolveStoreDir())
-		summaries, err := s.ListAll()
+		svc, err := getAPIService(true)
+		if err != nil {
+			return err
+		}
+		summaries, err := svc.ListSummaries(context.Background())
 		if err != nil {
 			return err
 		}
@@ -37,9 +41,12 @@ var listsCreateCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		s := store.New(resolveStoreDir())
-		if err := s.CreateList(name); err != nil {
-			if errors.Is(err, store.ErrListExists) {
+		svc, err := getAPIService(true)
+		if err != nil {
+			return err
+		}
+		if _, err := svc.CreateList(context.Background(), name); err != nil {
+			if errors.Is(err, todex.ErrListExists) {
 				return fmt.Errorf("list %q already exists", name)
 			}
 			return err
@@ -55,12 +62,15 @@ var listsRenameCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		oldName, newName := args[0], args[1]
-		s := store.New(resolveStoreDir())
-		if err := s.RenameList(oldName, newName); err != nil {
-			if errors.Is(err, store.ErrListNotFound) {
+		svc, err := getAPIService(true)
+		if err != nil {
+			return err
+		}
+		if err := svc.RenameList(context.Background(), oldName, newName); err != nil {
+			if errors.Is(err, todex.ErrListNotFound) {
 				return fmt.Errorf("list %q does not exist", oldName)
 			}
-			if errors.Is(err, store.ErrListExists) {
+			if errors.Is(err, todex.ErrListExists) {
 				return fmt.Errorf("list %q already exists", newName)
 			}
 			return err
@@ -76,19 +86,22 @@ var listsDeleteCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		s := store.New(resolveStoreDir())
+		svc, err := getAPIService(true)
+		if err != nil {
+			return err
+		}
 
 		force, _ := cmd.Flags().GetBool("force")
 		if !force {
-			total, _, err := s.CountTodos(name)
+			tasks, err := svc.ListTasks(context.Background(), name)
 			if err != nil {
-				if errors.Is(err, store.ErrListNotFound) {
+				if errors.Is(err, todex.ErrListNotFound) {
 					return fmt.Errorf("list %q does not exist", name)
 				}
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Delete list %q with %d todos? [y/N] ", name, total)
+			fmt.Fprintf(cmd.OutOrStdout(), "Delete list %q with %d todos? [y/N] ", name, len(tasks))
 			reader := bufio.NewReader(cmd.InOrStdin())
 			answer, _ := reader.ReadString('\n')
 			answer = strings.TrimSpace(strings.ToLower(answer))
@@ -98,8 +111,8 @@ var listsDeleteCmd = &cobra.Command{
 			}
 		}
 
-		if err := s.DeleteList(name); err != nil {
-			if errors.Is(err, store.ErrListNotFound) {
+		if err := svc.DeleteList(context.Background(), name); err != nil {
+			if errors.Is(err, todex.ErrListNotFound) {
 				return fmt.Errorf("list %q does not exist", name)
 			}
 			return err

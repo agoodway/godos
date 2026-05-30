@@ -1,23 +1,21 @@
 package cmd
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
-func setupListsTestDir(t *testing.T) string {
+func setupListsTestDir(t *testing.T) *remoteState {
 	t.Helper()
-	dir := t.TempDir()
-	// Override the store directory by patching the env var we'll use
-	t.Setenv("GODOS_DIR", dir)
-	return dir
+	dirFlag = ""
+	storeOnce = sync.Once{}
+	todoStore = nil
+	return setupRemoteCommandTest(t)
 }
 
 func TestListsCommand_NoLists(t *testing.T) {
-	dir := setupListsTestDir(t)
-	os.MkdirAll(dir, 0755)
+	setupListsTestDir(t)
 
 	out, err := executeCommand(t, "lists")
 	if err != nil {
@@ -29,10 +27,9 @@ func TestListsCommand_NoLists(t *testing.T) {
 }
 
 func TestListsCommand_WithLists(t *testing.T) {
-	dir := setupListsTestDir(t)
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, "todo.md"), []byte("- [ ] Task 1\n- [x] Task 2\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "work.md"), []byte("- [ ] Meeting\n"), 0644)
+	state := setupListsTestDir(t)
+	state.lists = []remoteList{{ID: "11111111-1111-4111-8111-111111111111", Name: "todo"}, {ID: "22222222-1111-4111-8111-111111111111", Name: "work"}}
+	state.tasks = []remoteTask{{ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ListID: state.lists[0].ID, Title: "Task 1", Status: "active"}, {ID: "bbbbbbbb-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ListID: state.lists[0].ID, Title: "Task 2", Status: "completed"}, {ID: "cccccccc-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ListID: state.lists[1].ID, Title: "Meeting", Status: "active"}}
 
 	out, err := executeCommand(t, "lists")
 	if err != nil {
@@ -47,7 +44,7 @@ func TestListsCommand_WithLists(t *testing.T) {
 }
 
 func TestListsCreate(t *testing.T) {
-	dir := setupListsTestDir(t)
+	state := setupListsTestDir(t)
 
 	out, err := executeCommand(t, "lists", "create", "shopping")
 	if err != nil {
@@ -57,16 +54,14 @@ func TestListsCreate(t *testing.T) {
 		t.Errorf("expected creation confirmation, got %q", out)
 	}
 
-	// Verify file exists
-	if _, err := os.Stat(filepath.Join(dir, "shopping.md")); err != nil {
-		t.Errorf("expected file to exist: %v", err)
+	if len(state.lists) != 1 || state.lists[0].Name != "shopping" {
+		t.Errorf("expected remote list to exist: %#v", state.lists)
 	}
 }
 
 func TestListsCreate_Duplicate(t *testing.T) {
-	dir := setupListsTestDir(t)
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, "work.md"), []byte(""), 0644)
+	state := setupListsTestDir(t)
+	state.lists = []remoteList{{ID: "11111111-1111-4111-8111-111111111111", Name: "work"}}
 
 	_, err := executeCommand(t, "lists", "create", "work")
 	if err == nil {
@@ -84,9 +79,8 @@ func TestListsCreate_InvalidName(t *testing.T) {
 }
 
 func TestListsRename(t *testing.T) {
-	dir := setupListsTestDir(t)
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, "shopping.md"), []byte("- [ ] Milk\n"), 0644)
+	state := setupListsTestDir(t)
+	state.lists = []remoteList{{ID: "11111111-1111-4111-8111-111111111111", Name: "shopping"}}
 
 	out, err := executeCommand(t, "lists", "rename", "shopping", "groceries")
 	if err != nil {
@@ -96,12 +90,8 @@ func TestListsRename(t *testing.T) {
 		t.Errorf("expected rename confirmation, got %q", out)
 	}
 
-	// Old gone, new exists
-	if _, err := os.Stat(filepath.Join(dir, "shopping.md")); !os.IsNotExist(err) {
-		t.Error("expected old file removed")
-	}
-	if _, err := os.Stat(filepath.Join(dir, "groceries.md")); err != nil {
-		t.Errorf("expected new file to exist: %v", err)
+	if state.lists[0].Name != "groceries" {
+		t.Errorf("expected renamed remote list, got %#v", state.lists)
 	}
 }
 
@@ -115,9 +105,8 @@ func TestListsRename_SourceMissing(t *testing.T) {
 }
 
 func TestListsDelete_Force(t *testing.T) {
-	dir := setupListsTestDir(t)
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, "temp.md"), []byte("- [ ] Something\n"), 0644)
+	state := setupListsTestDir(t)
+	state.lists = []remoteList{{ID: "11111111-1111-4111-8111-111111111111", Name: "temp"}}
 
 	out, err := executeCommand(t, "lists", "delete", "temp", "--force")
 	if err != nil {
@@ -126,8 +115,8 @@ func TestListsDelete_Force(t *testing.T) {
 	if !strings.Contains(out, "Deleted") {
 		t.Errorf("expected delete confirmation, got %q", out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "temp.md")); !os.IsNotExist(err) {
-		t.Error("expected file to be removed")
+	if len(state.lists) != 0 {
+		t.Error("expected remote list to be removed")
 	}
 }
 
@@ -141,9 +130,9 @@ func TestListsDelete_Missing(t *testing.T) {
 }
 
 func TestListsDelete_ConfirmYes(t *testing.T) {
-	dir := setupListsTestDir(t)
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, "temp.md"), []byte("- [ ] Task\n"), 0644)
+	state := setupListsTestDir(t)
+	state.lists = []remoteList{{ID: "11111111-1111-4111-8111-111111111111", Name: "temp"}}
+	state.tasks = []remoteTask{{ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ListID: state.lists[0].ID, Title: "Task", Status: "active"}}
 
 	out, err := executeCommandWithInput(t, strings.NewReader("y\n"), "lists", "delete", "temp")
 	if err != nil {
@@ -152,15 +141,15 @@ func TestListsDelete_ConfirmYes(t *testing.T) {
 	if !strings.Contains(out, "Deleted") {
 		t.Errorf("expected delete confirmation, got %q", out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "temp.md")); !os.IsNotExist(err) {
-		t.Error("expected file to be removed")
+	if len(state.lists) != 0 {
+		t.Error("expected remote list to be removed")
 	}
 }
 
 func TestListsDelete_ConfirmNo(t *testing.T) {
-	dir := setupListsTestDir(t)
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, "temp.md"), []byte("- [ ] Task\n"), 0644)
+	state := setupListsTestDir(t)
+	state.lists = []remoteList{{ID: "11111111-1111-4111-8111-111111111111", Name: "temp"}}
+	state.tasks = []remoteTask{{ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ListID: state.lists[0].ID, Title: "Task", Status: "active"}}
 
 	out, err := executeCommandWithInput(t, strings.NewReader("n\n"), "lists", "delete", "temp")
 	if err != nil {
@@ -169,15 +158,15 @@ func TestListsDelete_ConfirmNo(t *testing.T) {
 	if !strings.Contains(out, "Cancelled") {
 		t.Errorf("expected cancel message, got %q", out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "temp.md")); err != nil {
-		t.Error("expected file to still exist")
+	if len(state.lists) != 1 {
+		t.Error("expected remote list to still exist")
 	}
 }
 
 func TestListsDelete_ConfirmEmpty(t *testing.T) {
-	dir := setupListsTestDir(t)
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, "temp.md"), []byte("- [ ] Task\n"), 0644)
+	state := setupListsTestDir(t)
+	state.lists = []remoteList{{ID: "11111111-1111-4111-8111-111111111111", Name: "temp"}}
+	state.tasks = []remoteTask{{ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ListID: state.lists[0].ID, Title: "Task", Status: "active"}}
 
 	out, err := executeCommandWithInput(t, strings.NewReader("\n"), "lists", "delete", "temp")
 	if err != nil {
@@ -186,8 +175,8 @@ func TestListsDelete_ConfirmEmpty(t *testing.T) {
 	if !strings.Contains(out, "Cancelled") {
 		t.Errorf("expected cancel message, got %q", out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "temp.md")); err != nil {
-		t.Error("expected file to still exist")
+	if len(state.lists) != 1 {
+		t.Error("expected remote list to still exist")
 	}
 }
 

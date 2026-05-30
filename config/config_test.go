@@ -13,6 +13,47 @@ func setupTestConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 }
 
+func TestAPIBaseURLRejectsUnsafeURLs(t *testing.T) {
+	setupTestConfig(t)
+
+	cases := []string{
+		"http://api.example.com",
+		"ftp://api.example.com",
+		"https://user:pass@api.example.com",
+		"not a url",
+	}
+	for _, value := range cases {
+		t.Run(value, func(t *testing.T) {
+			if err := Set(APIBaseURLKey, value); err != nil {
+				t.Fatal(err)
+			}
+			_, err := APIBaseURL()
+			if err == nil {
+				t.Fatalf("expected %q to be rejected", value)
+			}
+		})
+	}
+}
+
+func TestAPIBaseURLAllowsHTTPSAndLoopbackHTTP(t *testing.T) {
+	setupTestConfig(t)
+
+	for _, value := range []string{"https://api.example.com", "http://127.0.0.1:4000", "http://localhost:4000"} {
+		t.Run(value, func(t *testing.T) {
+			if err := Set(APIBaseURLKey, value); err != nil {
+				t.Fatal(err)
+			}
+			got, err := APIBaseURL()
+			if err != nil {
+				t.Fatalf("expected %q to be allowed: %v", value, err)
+			}
+			if got != value {
+				t.Fatalf("APIBaseURL() = %q, want %q", got, value)
+			}
+		})
+	}
+}
+
 func TestFilePath_XDGSet(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
 	got := FilePath()
@@ -190,5 +231,45 @@ func TestSet_SpecialCharacters(t *testing.T) {
 				t.Errorf("Get(%q) = %q, want %q", tc.key, got, tc.value)
 			}
 		})
+	}
+}
+
+func TestAPIConfigEnvOverridesStoredValues(t *testing.T) {
+	setupTestConfig(t)
+	if err := Set(APIBaseURLKey, "https://stored.example"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Set(APITokenKey, "stored-token"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv(APIBaseURLEnv, "https://env.example")
+	t.Setenv(APITokenEnv, "env-token")
+
+	baseURL, err := APIBaseURL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseURL != "https://env.example" {
+		t.Fatalf("expected env base URL, got %q", baseURL)
+	}
+
+	token, err := APIToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "env-token" {
+		t.Fatalf("expected env token, got %q", token)
+	}
+}
+
+func TestAPIConfigMissingValuesReturnClearErrors(t *testing.T) {
+	setupTestConfig(t)
+
+	if _, err := APIBaseURL(); err == nil || !strings.Contains(err.Error(), APIBaseURLKey) {
+		t.Fatalf("expected missing base URL error, got %v", err)
+	}
+	if _, err := APIToken(); err == nil || !strings.Contains(err.Error(), "login") {
+		t.Fatalf("expected missing token login guidance, got %v", err)
 	}
 }

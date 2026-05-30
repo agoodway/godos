@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -15,10 +16,15 @@ var addCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		text := strings.Join(args, " ")
-		if err := getStore().Add(addListFlag, text); err != nil {
+		svc, err := getAPIService(true)
+		if err != nil {
 			return err
 		}
-		fmt.Printf("Added \"%s\" to %s\n", text, addListFlag)
+		task, err := svc.AddTask(context.Background(), addListFlag, text)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Added %s \"%s\" to %s\n", task.ShortID, task.Title, addListFlag)
 		return nil
 	},
 }

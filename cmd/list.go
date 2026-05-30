@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -16,47 +17,63 @@ var listCmd = &cobra.Command{
 	Short: "List todos",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if listAllFlag {
-			return listAll()
+			return listAll(cmd)
 		}
-		return listOne(listNameFlag)
+		return listOne(cmd, listNameFlag)
 	},
 }
 
-func listOne(name string) error {
-	todos, err := getStore().ListTodos(name)
+func listOne(cmd *cobra.Command, name string) error {
+	svc, err := getAPIService(true)
+	if err != nil {
+		return err
+	}
+	todos, err := svc.ListTasks(context.Background(), name)
 	if err != nil {
 		return err
 	}
 	if len(todos) == 0 {
-		fmt.Printf("No todos in %s\n", name)
+		fmt.Fprintf(cmd.OutOrStdout(), "No todos in %s\n", name)
 		return nil
 	}
-	for i, t := range todos {
+	for _, t := range todos {
 		status := "[ ]"
 		if t.Done {
 			status = "[x]"
 		}
-		fmt.Printf("%d. %s %s\n", i+1, status, t.Text)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s. %s %s\n", t.ShortID, status, t.Title)
 	}
 	return nil
 }
 
-func listAll() error {
-	names, err := getStore().Lists()
+func listAll(cmd *cobra.Command) error {
+	svc, err := getAPIService(true)
 	if err != nil {
 		return err
 	}
-	if len(names) == 0 {
-		fmt.Println("No lists found")
+	lists, err := svc.ListAllTasks(context.Background())
+	if err != nil {
+		return err
+	}
+	if len(lists) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No lists found")
 		return nil
 	}
-	for i, name := range names {
+	for i, list := range lists {
 		if i > 0 {
-			fmt.Println()
+			fmt.Fprintln(cmd.OutOrStdout())
 		}
-		fmt.Printf("=== %s ===\n", name)
-		if err := listOne(name); err != nil {
-			return err
+		fmt.Fprintf(cmd.OutOrStdout(), "=== %s ===\n", list.Name)
+		if len(list.Tasks) == 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "No todos in %s\n", list.Name)
+			continue
+		}
+		for _, t := range list.Tasks {
+			status := "[ ]"
+			if t.Done {
+				status = "[x]"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s. %s %s\n", t.ShortID, status, t.Title)
 		}
 	}
 	return nil

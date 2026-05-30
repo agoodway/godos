@@ -1,34 +1,30 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
-	"strconv"
 
 	"github.com/spf13/cobra"
 )
 
-var rmListFlag string
-
 var rmCmd = &cobra.Command{
-	Use:   "rm <number>",
+	Use:   "rm <id-prefix>",
 	Short: "Remove a todo",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		n, err := strconv.Atoi(args[0])
-		if err != nil || n < 1 {
-			return fmt.Errorf("invalid todo number %q", args[0])
-		}
-
-		text, err := getStore().Remove(rmListFlag, n)
+		svc, err := getAPIService(true)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Removed #%d \"%s\"\n", n, text)
+		task, err := svc.DeleteTask(context.Background(), args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Removed %s \"%s\"\n", task.ShortID, task.Title)
 		return nil
 	},
 }
 
 func init() {
-	rmCmd.Flags().StringVar(&rmListFlag, "list", "todo", "list name")
 	rootCmd.AddCommand(rmCmd)
 }

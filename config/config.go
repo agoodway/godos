@@ -3,14 +3,24 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 // ErrNotFound is returned by Load when the config file does not exist.
 var ErrNotFound = errors.New("config file not found")
+
+const (
+	APIBaseURLKey = "api_base_url"
+	APITokenKey   = "api_token"
+	APIBaseURLEnv = "GODOS_API_BASE_URL"
+	APITokenEnv   = "GODOS_API_TOKEN"
+)
 
 // FilePath returns the path to the config file, respecting XDG_CONFIG_HOME.
 func FilePath() string {
@@ -98,11 +108,33 @@ func Get(key string) (string, error) {
 	return v, nil
 }
 
+func APIBaseURL() (string, error) {
+	if value := os.Getenv(APIBaseURLEnv); value != "" {
+		return validateAPIBaseURL(value)
+	}
+	value, err := Get(APIBaseURLKey)
+	if err != nil || value == "" {
+		return "", fmt.Errorf("%s is not configured; run godos configure set %s <url> or set %s", APIBaseURLKey, APIBaseURLKey, APIBaseURLEnv)
+	}
+	return validateAPIBaseURL(value)
+}
+
+func APIToken() (string, error) {
+	if value := os.Getenv(APITokenEnv); value != "" {
+		return value, nil
+	}
+	value, err := Get(APITokenKey)
+	if err != nil || value == "" {
+		return "", fmt.Errorf("Todex API token is not configured; run godos login or godos register, or set %s", APITokenEnv)
+	}
+	return value, nil
+}
+
 // Delete loads the config, removes the key, and saves.
 func Delete(key string) error {
 	m, err := Load()
 	if errors.Is(err, ErrNotFound) {
-		return fmt.Errorf("key %q is not set", key)
+		return fmt.Errorf("%w: key %q is not set", ErrNotFound, key)
 	}
 	if err != nil {
 		return err
@@ -114,6 +146,32 @@ func Delete(key string) error {
 
 	delete(m, key)
 	return Save(m)
+}
+
+func validateAPIBaseURL(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	u, err := url.ParseRequestURI(trimmed)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("%s must be a valid absolute URL", APIBaseURLKey)
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("%s must not include credentials", APIBaseURLKey)
+	}
+	if u.Scheme == "https" {
+		return trimmed, nil
+	}
+	if u.Scheme == "http" && isLoopbackHost(u.Hostname()) {
+		return trimmed, nil
+	}
+	return "", fmt.Errorf("%s must use https, except for localhost development", APIBaseURLKey)
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Set loads the config, sets the key-value pair, and saves.
