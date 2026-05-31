@@ -39,10 +39,16 @@ func executeCommandWithInput(t *testing.T, stdin io.Reader, args ...string) (str
 		// Reset flags and stdin on all subcommands to prevent test contamination.
 		for _, c := range rootCmd.Commands() {
 			c.SetIn(nil)
-			c.Flags().Visit(func(f *pflag.Flag) { f.Value.Set(f.DefValue) })
+			c.Flags().Visit(func(f *pflag.Flag) {
+				f.Value.Set(f.DefValue)
+				f.Changed = false
+			})
 			for _, sc := range c.Commands() {
 				sc.SetIn(nil)
-				sc.Flags().Visit(func(f *pflag.Flag) { f.Value.Set(f.DefValue) })
+				sc.Flags().Visit(func(f *pflag.Flag) {
+					f.Value.Set(f.DefValue)
+					f.Changed = false
+				})
 			}
 		}
 	}()

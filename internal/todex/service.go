@@ -19,11 +19,16 @@ import (
 )
 
 var (
-	ErrListNotFound     = errors.New("list not found")
-	ErrListExists       = errors.New("list already exists")
-	ErrTaskNotFound     = errors.New("task not found")
-	ErrAmbiguousID      = errors.New("ambiguous task ID prefix")
-	ErrResponseTooLarge = errors.New("Todex API response too large")
+	ErrListNotFound       = errors.New("list not found")
+	ErrListExists         = errors.New("list already exists")
+	ErrTaskNotFound       = errors.New("task not found")
+	ErrNoteNotFound       = errors.New("note not found")
+	ErrNoteFolderNotFound = errors.New("note folder not found")
+	ErrGoalNotFound       = errors.New("goal not found")
+	ErrAmbiguousID        = errors.New("ambiguous task ID prefix")
+	ErrAmbiguousNoteID    = errors.New("ambiguous note ID prefix")
+	ErrAmbiguousGoalID    = errors.New("ambiguous goal ID prefix")
+	ErrResponseTooLarge   = errors.New("Todex API response too large")
 )
 
 const (
@@ -58,6 +63,38 @@ type Task struct {
 	ShortID string
 	Title   string
 	Done    bool
+}
+
+type NoteFilters struct {
+	FolderName string
+	Query      string
+	Pinned     *bool
+	Deleted    *bool
+}
+
+type Note struct {
+	ID       string
+	ShortID  string
+	FolderID string
+	Title    string
+	Body     string
+	Pinned   bool
+	Deleted  bool
+}
+
+type Goal struct {
+	ID          string
+	ShortID     string
+	Title       string
+	Description string
+	Reason      string
+	Progress    int
+}
+
+type GoalChanges struct {
+	Title       *string
+	Description *string
+	Reason      *string
 }
 
 type User struct {
@@ -270,7 +307,11 @@ func (s *Service) CompleteTask(ctx context.Context, prefix string) (Task, error)
 	if err != nil {
 		return Task{}, err
 	}
-	resp, err := s.client.CompleteTaskWithResponse(ctx, uuid.MustParse(id))
+	taskID, err := parseID(id)
+	if err != nil {
+		return Task{}, err
+	}
+	resp, err := s.client.CompleteTaskWithResponse(ctx, taskID)
 	if err != nil {
 		return Task{}, normalizeTransportError(err)
 	}
@@ -285,7 +326,11 @@ func (s *Service) ReopenTask(ctx context.Context, prefix string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	resp, err := s.client.ReopenTaskWithResponse(ctx, uuid.MustParse(id))
+	taskID, err := parseID(id)
+	if err != nil {
+		return Task{}, err
+	}
+	resp, err := s.client.ReopenTaskWithResponse(ctx, taskID)
 	if err != nil {
 		return Task{}, normalizeTransportError(err)
 	}
@@ -300,7 +345,11 @@ func (s *Service) DeleteTask(ctx context.Context, prefix string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	resp, err := s.client.DeleteTaskWithResponse(ctx, uuid.MustParse(id))
+	taskID, err := parseID(id)
+	if err != nil {
+		return Task{}, err
+	}
+	resp, err := s.client.DeleteTaskWithResponse(ctx, taskID)
 	if err != nil {
 		return Task{}, normalizeTransportError(err)
 	}
@@ -308,6 +357,317 @@ func (s *Service) DeleteTask(ctx context.Context, prefix string) (Task, error) {
 		return Task{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
 	}
 	return toTask(*resp.JSON200.Data.Task), nil
+}
+
+func (s *Service) ListNotes(ctx context.Context, filters NoteFilters) ([]Note, error) {
+	params := &todexapi.ListNotesParams{}
+	if strings.TrimSpace(filters.FolderName) != "" {
+		folder, err := s.resolveNoteFolder(ctx, filters.FolderName)
+		if err != nil {
+			return nil, err
+		}
+		params.FolderId = &folder.Id
+	}
+	if query := strings.TrimSpace(filters.Query); query != "" {
+		params.Q = &query
+	}
+	params.Pinned = filters.Pinned
+	params.Deleted = filters.Deleted
+
+	resp, err := s.client.ListNotesWithResponse(ctx, params)
+	if err != nil {
+		return nil, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Notes == nil {
+		return nil, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toNotes(*resp.JSON200.Data.Notes), nil
+}
+
+func (s *Service) CreateNote(ctx context.Context, title, folderName, body string) (Note, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return Note{}, fmt.Errorf("note title cannot be empty")
+	}
+	folder, err := s.resolveNoteFolder(ctx, folderName)
+	if err != nil {
+		return Note{}, err
+	}
+	req := todexapi.NoteRequest{Title: &title, FolderId: &folder.Id}
+	if body != "" {
+		req.Body = &body
+	}
+	resp, err := s.client.CreateNoteWithResponse(ctx, req)
+	if err != nil {
+		return Note{}, normalizeTransportError(err)
+	}
+	if resp.JSON201 == nil || resp.JSON201.Data.Note == nil {
+		return Note{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toNote(*resp.JSON201.Data.Note), nil
+}
+
+func (s *Service) GetNote(ctx context.Context, prefix string) (Note, error) {
+	active := false
+	id, err := s.resolveRemoteNotePrefix(ctx, prefix, &active)
+	if err != nil {
+		return Note{}, err
+	}
+	noteID, err := parseID(id)
+	if err != nil {
+		return Note{}, err
+	}
+	resp, err := s.client.GetNoteWithResponse(ctx, noteID)
+	if err != nil {
+		return Note{}, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Note == nil {
+		return Note{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toNote(*resp.JSON200.Data.Note), nil
+}
+
+func (s *Service) UpdateNoteBody(ctx context.Context, id, body string) (Note, error) {
+	noteID, err := parseID(id)
+	if err != nil {
+		return Note{}, err
+	}
+	req := todexapi.NoteRequest{Body: &body}
+	resp, err := s.client.UpdateNoteWithResponse(ctx, noteID, req)
+	if err != nil {
+		return Note{}, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Note == nil {
+		return Note{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toNote(*resp.JSON200.Data.Note), nil
+}
+
+func (s *Service) DeleteNote(ctx context.Context, prefix string) (Note, error) {
+	active := false
+	id, err := s.resolveRemoteNotePrefix(ctx, prefix, &active)
+	if err != nil {
+		return Note{}, err
+	}
+	noteID, err := parseID(id)
+	if err != nil {
+		return Note{}, err
+	}
+	resp, err := s.client.DeleteNoteWithResponse(ctx, noteID)
+	if err != nil {
+		return Note{}, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Note == nil {
+		return Note{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toNote(*resp.JSON200.Data.Note), nil
+}
+
+func (s *Service) RestoreNote(ctx context.Context, prefix string) (Note, error) {
+	deleted := true
+	id, err := s.resolveRemoteNotePrefix(ctx, prefix, &deleted)
+	if err != nil {
+		return Note{}, err
+	}
+	noteID, err := parseID(id)
+	if err != nil {
+		return Note{}, err
+	}
+	resp, err := s.client.RestoreNoteWithResponse(ctx, noteID)
+	if err != nil {
+		return Note{}, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Note == nil {
+		return Note{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toNote(*resp.JSON200.Data.Note), nil
+}
+
+func (s *Service) PinNote(ctx context.Context, prefix string) (Note, error) {
+	active := false
+	id, err := s.resolveRemoteNotePrefix(ctx, prefix, &active)
+	if err != nil {
+		return Note{}, err
+	}
+	noteID, err := parseID(id)
+	if err != nil {
+		return Note{}, err
+	}
+	resp, err := s.client.PinNoteWithResponse(ctx, noteID)
+	if err != nil {
+		return Note{}, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Note == nil {
+		return Note{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toNote(*resp.JSON200.Data.Note), nil
+}
+
+func (s *Service) UnpinNote(ctx context.Context, prefix string) (Note, error) {
+	active := false
+	id, err := s.resolveRemoteNotePrefix(ctx, prefix, &active)
+	if err != nil {
+		return Note{}, err
+	}
+	noteID, err := parseID(id)
+	if err != nil {
+		return Note{}, err
+	}
+	resp, err := s.client.UnpinNoteWithResponse(ctx, noteID)
+	if err != nil {
+		return Note{}, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Note == nil {
+		return Note{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toNote(*resp.JSON200.Data.Note), nil
+}
+
+func (s *Service) ListGoals(ctx context.Context) ([]Goal, error) {
+	resp, err := s.client.ListGoalsWithResponse(ctx)
+	if err != nil {
+		return nil, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Goals == nil {
+		return nil, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toGoals(*resp.JSON200.Data.Goals), nil
+}
+
+func (s *Service) CreateGoal(ctx context.Context, changes GoalChanges) (Goal, error) {
+	if changes.Title == nil || strings.TrimSpace(*changes.Title) == "" {
+		return Goal{}, fmt.Errorf("goal title cannot be empty")
+	}
+	title := strings.TrimSpace(*changes.Title)
+	req := todexapi.GoalRequest{Title: &title, Description: changes.Description, Reason: changes.Reason}
+	resp, err := s.client.CreateGoalWithResponse(ctx, req)
+	if err != nil {
+		return Goal{}, normalizeTransportError(err)
+	}
+	if resp.JSON201 == nil || resp.JSON201.Data.Goal == nil {
+		return Goal{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toGoal(*resp.JSON201.Data.Goal), nil
+}
+
+func (s *Service) GetGoal(ctx context.Context, prefix string) (Goal, error) {
+	id, err := s.resolveRemoteGoalPrefix(ctx, prefix)
+	if err != nil {
+		return Goal{}, err
+	}
+	goalID, err := parseID(id)
+	if err != nil {
+		return Goal{}, err
+	}
+	resp, err := s.client.GetGoalWithResponse(ctx, goalID)
+	if err != nil {
+		return Goal{}, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Goal == nil {
+		return Goal{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toGoal(*resp.JSON200.Data.Goal), nil
+}
+
+func (s *Service) UpdateGoal(ctx context.Context, prefix string, changes GoalChanges) (Goal, error) {
+	id, err := s.resolveRemoteGoalPrefix(ctx, prefix)
+	if err != nil {
+		return Goal{}, err
+	}
+	if changes.Title != nil {
+		title := strings.TrimSpace(*changes.Title)
+		if title == "" {
+			return Goal{}, fmt.Errorf("goal title cannot be empty")
+		}
+		changes.Title = &title
+	}
+	goalID, err := parseID(id)
+	if err != nil {
+		return Goal{}, err
+	}
+	req := todexapi.GoalRequest{Title: changes.Title, Description: changes.Description, Reason: changes.Reason}
+	resp, err := s.client.UpdateGoalWithResponse(ctx, goalID, req)
+	if err != nil {
+		return Goal{}, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Goal == nil {
+		return Goal{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toGoal(*resp.JSON200.Data.Goal), nil
+}
+
+func (s *Service) DeleteGoal(ctx context.Context, prefix string) (Goal, error) {
+	id, err := s.resolveRemoteGoalPrefix(ctx, prefix)
+	if err != nil {
+		return Goal{}, err
+	}
+	goalID, err := parseID(id)
+	if err != nil {
+		return Goal{}, err
+	}
+	resp, err := s.client.DeleteGoalWithResponse(ctx, goalID)
+	if err != nil {
+		return Goal{}, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Goal == nil {
+		return Goal{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toGoal(*resp.JSON200.Data.Goal), nil
+}
+
+func (s *Service) LinkGoalTask(ctx context.Context, goalPrefix, taskPrefix string) (Goal, error) {
+	goalID, err := s.resolveRemoteGoalPrefix(ctx, goalPrefix)
+	if err != nil {
+		return Goal{}, err
+	}
+	taskID, err := s.resolveRemoteTaskPrefix(ctx, taskPrefix)
+	if err != nil {
+		return Goal{}, err
+	}
+	goalUUID, err := parseID(goalID)
+	if err != nil {
+		return Goal{}, err
+	}
+	taskUUID, err := parseID(taskID)
+	if err != nil {
+		return Goal{}, err
+	}
+	req := todexapi.GoalLinkTaskRequest{TaskId: taskUUID}
+	resp, err := s.client.LinkGoalTaskWithResponse(ctx, goalUUID, req)
+	if err != nil {
+		return Goal{}, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Goal == nil {
+		return Goal{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toGoal(*resp.JSON200.Data.Goal), nil
+}
+
+func (s *Service) UnlinkGoalTask(ctx context.Context, goalPrefix, taskPrefix string) (Goal, error) {
+	goalID, err := s.resolveRemoteGoalPrefix(ctx, goalPrefix)
+	if err != nil {
+		return Goal{}, err
+	}
+	taskID, err := s.resolveRemoteTaskPrefix(ctx, taskPrefix)
+	if err != nil {
+		return Goal{}, err
+	}
+	goalUUID, err := parseID(goalID)
+	if err != nil {
+		return Goal{}, err
+	}
+	taskUUID, err := parseID(taskID)
+	if err != nil {
+		return Goal{}, err
+	}
+	resp, err := s.client.UnlinkGoalTaskWithResponse(ctx, goalUUID, taskUUID)
+	if err != nil {
+		return Goal{}, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Goal == nil {
+		return Goal{}, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return toGoal(*resp.JSON200.Data.Goal), nil
 }
 
 func (s *Service) ResolveTaskPrefix(prefix string) (string, error) {
@@ -323,6 +683,14 @@ func (s *Service) resolveRemoteTaskPrefix(ctx context.Context, prefix string) (s
 		return "", normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
 	}
 	return resolveTaskPrefix(toTasks(*resp.JSON200.Data.Tasks), prefix)
+}
+
+func parseID(id string) (openapi_types.UUID, error) {
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return openapi_types.UUID{}, fmt.Errorf("invalid ID %q: %w", id, err)
+	}
+	return parsed, nil
 }
 
 func resolveTaskPrefix(tasks []Task, prefix string) (string, error) {
@@ -394,6 +762,113 @@ func (s *Service) tasksForList(ctx context.Context, listID openapi_types.UUID) (
 	return *resp.JSON200.Data.Tasks, nil
 }
 
+func (s *Service) noteFolders(ctx context.Context) ([]todexapi.NoteFolder, error) {
+	resp, err := s.client.ListNoteFoldersWithResponse(ctx)
+	if err != nil {
+		return nil, normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.NoteFolders == nil {
+		return nil, normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return *resp.JSON200.Data.NoteFolders, nil
+}
+
+func (s *Service) resolveNoteFolder(ctx context.Context, name string) (todexapi.NoteFolder, error) {
+	folders, err := s.noteFolders(ctx)
+	if err != nil {
+		return todexapi.NoteFolder{}, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		for _, folder := range folders {
+			if folder.IsDefault {
+				return folder, nil
+			}
+		}
+		return todexapi.NoteFolder{}, fmt.Errorf("%w: no default note folder configured", ErrNoteFolderNotFound)
+	}
+
+	matches := make([]todexapi.NoteFolder, 0, 1)
+	for _, folder := range folders {
+		if folder.Name == name {
+			matches = append(matches, folder)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return todexapi.NoteFolder{}, fmt.Errorf("%w: %q", ErrNoteFolderNotFound, name)
+	case 1:
+		return matches[0], nil
+	default:
+		return todexapi.NoteFolder{}, fmt.Errorf("duplicate remote note folder name %q", name)
+	}
+}
+
+func (s *Service) resolveRemoteNotePrefix(ctx context.Context, prefix string, deleted *bool) (string, error) {
+	params := &todexapi.ListNotesParams{Deleted: deleted}
+	resp, err := s.client.ListNotesWithResponse(ctx, params)
+	if err != nil {
+		return "", normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Notes == nil {
+		return "", normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return resolveNotePrefix(toNotes(*resp.JSON200.Data.Notes), prefix)
+}
+
+func resolveNotePrefix(notes []Note, prefix string) (string, error) {
+	prefix = strings.TrimSpace(strings.ToLower(prefix))
+	if prefix == "" {
+		return "", fmt.Errorf("note ID prefix is required")
+	}
+	matches := make([]Note, 0, 1)
+	for _, note := range notes {
+		if strings.HasPrefix(strings.ToLower(note.ID), prefix) {
+			matches = append(matches, note)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("%w: %q", ErrNoteNotFound, prefix)
+	case 1:
+		return matches[0].ID, nil
+	default:
+		return "", fmt.Errorf("%w %q; provide more characters", ErrAmbiguousNoteID, prefix)
+	}
+}
+
+func (s *Service) resolveRemoteGoalPrefix(ctx context.Context, prefix string) (string, error) {
+	resp, err := s.client.ListGoalsWithResponse(ctx)
+	if err != nil {
+		return "", normalizeTransportError(err)
+	}
+	if resp.JSON200 == nil || resp.JSON200.Data.Goals == nil {
+		return "", normalizeResponse(resp.StatusCode(), resp.Body, firstError(resp.JSON400, resp.JSON401, resp.JSON404, resp.JSON415, resp.JSON422))
+	}
+	return resolveGoalPrefix(toGoals(*resp.JSON200.Data.Goals), prefix)
+}
+
+func resolveGoalPrefix(goals []Goal, prefix string) (string, error) {
+	prefix = strings.TrimSpace(strings.ToLower(prefix))
+	if prefix == "" {
+		return "", fmt.Errorf("goal ID prefix is required")
+	}
+	matches := make([]Goal, 0, 1)
+	for _, goal := range goals {
+		if strings.HasPrefix(strings.ToLower(goal.ID), prefix) {
+			matches = append(matches, goal)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("%w: %q", ErrGoalNotFound, prefix)
+	case 1:
+		return matches[0].ID, nil
+	default:
+		return "", fmt.Errorf("%w %q; provide more characters", ErrAmbiguousGoalID, prefix)
+	}
+}
+
 func toTasks(apiTasks []todexapi.Task) []Task {
 	tasks := make([]Task, 0, len(apiTasks))
 	for _, task := range apiTasks {
@@ -409,6 +884,60 @@ func toTask(task todexapi.Task) Task {
 		shortID = shortID[:8]
 	}
 	return Task{ID: id, ShortID: shortID, Title: task.Title, Done: task.Status == todexapi.Completed}
+}
+
+func toNotes(apiNotes []todexapi.Note) []Note {
+	notes := make([]Note, 0, len(apiNotes))
+	for _, note := range apiNotes {
+		notes = append(notes, toNote(note))
+	}
+	return notes
+}
+
+func toNote(note todexapi.Note) Note {
+	id := note.Id.String()
+	shortID := id
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+	body := ""
+	if note.Body != nil {
+		body = *note.Body
+	}
+	return Note{
+		ID:       id,
+		ShortID:  shortID,
+		FolderID: note.FolderId.String(),
+		Title:    note.Title,
+		Body:     body,
+		Pinned:   note.Pinned,
+		Deleted:  note.DeletedAt != nil,
+	}
+}
+
+func toGoals(apiGoals []todexapi.Goal) []Goal {
+	goals := make([]Goal, 0, len(apiGoals))
+	for _, goal := range apiGoals {
+		goals = append(goals, toGoal(goal))
+	}
+	return goals
+}
+
+func toGoal(goal todexapi.Goal) Goal {
+	id := goal.Id.String()
+	shortID := id
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+	description := ""
+	if goal.Description != nil {
+		description = *goal.Description
+	}
+	reason := ""
+	if goal.Reason != nil {
+		reason = *goal.Reason
+	}
+	return Goal{ID: id, ShortID: shortID, Title: goal.Title, Description: description, Reason: reason, Progress: goal.Progress}
 }
 
 func normalizeTransportError(err error) error {
