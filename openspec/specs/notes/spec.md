@@ -6,8 +6,6 @@ The notes capability allows users to create, manage, and store free-form markdow
 
 ## Requirements
 
-## ADDED Requirements
-
 ### Requirement: Note storage directory
 The system SHALL store notes as individual markdown files in a `notes/` subdirectory within the storage directory. Each note file SHALL be named `<name>.md` where `<name>` follows the same validation rules as list names.
 

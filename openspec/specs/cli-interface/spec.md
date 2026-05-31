@@ -6,8 +6,6 @@ The cli-interface capability defines the command structure and user-facing comma
 
 ## Requirements
 
-## ADDED Requirements
-
 ### Requirement: Note add command
 The CLI SHALL provide a `godos note add <name>` command that creates a new note and opens it in the user's `$EDITOR` (defaulting to `vi`). The name SHALL be validated before creation.
 
