@@ -57,7 +57,7 @@ func Load() (map[string]string, error) {
 func Save(data map[string]string) error {
 	p := FilePath()
 	dir := filepath.Dir(p)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
